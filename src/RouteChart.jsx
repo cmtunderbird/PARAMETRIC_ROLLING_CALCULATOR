@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from "react";
-import { MapContainer, TileLayer, Polyline, Marker, Popup, Tooltip, Circle, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Polyline, Marker, Popup, Tooltip, Circle, useMap, Rectangle } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { autoDetectAndParse, computeRouteStats, generateWeatherSamplePoints, generateSampleRTZ, haversineNM, bearing } from "./RouteParser.js";
@@ -31,6 +31,123 @@ function FitBounds({ waypoints }) {
     }
   }, [waypoints, map]);
   return null;
+}
+
+function CaptureMap({ mapRef }) {
+  const map = useMap();
+  useEffect(() => { mapRef.current = map; }, [map, mapRef]);
+  return null;
+}
+
+// ─── Sea Area Weather Grid Overlay ────────────────────────────────────────────
+function waveHeightColor(hs) {
+  if (hs == null) return "transparent";
+  if (hs < 0.5) return "#0D9488";
+  if (hs < 1.0) return "#16A34A";
+  if (hs < 2.0) return "#22D3EE";
+  if (hs < 3.0) return "#3B82F6";
+  if (hs < 4.0) return "#A855F7";
+  if (hs < 5.0) return "#D97706";
+  if (hs < 7.0) return "#EA580C";
+  return "#DC2626";
+}
+function wavePeriodColor(tw) {
+  if (tw == null) return "transparent";
+  if (tw < 4) return "#22D3EE";
+  if (tw < 6) return "#3B82F6";
+  if (tw < 8) return "#16A34A";
+  if (tw < 10) return "#CA8A04";
+  if (tw < 12) return "#D97706";
+  if (tw < 15) return "#EA580C";
+  return "#DC2626";
+}
+
+async function fetchGridWeather(bounds, gridRes = 2.0) {
+  const south = Math.floor(bounds.south / gridRes) * gridRes;
+  const north = Math.ceil(bounds.north / gridRes) * gridRes;
+  const west = Math.floor(bounds.west / gridRes) * gridRes;
+  const east = Math.ceil(bounds.east / gridRes) * gridRes;
+  const lats = [], lons = [];
+  for (let la = south; la <= north; la += gridRes) lats.push(parseFloat(la.toFixed(2)));
+  for (let lo = west; lo <= east; lo += gridRes) lons.push(parseFloat(lo.toFixed(2)));
+  if (lats.length * lons.length > 400) throw new Error(`Grid too large (${lats.length}x${lons.length}). Zoom in or increase resolution.`);
+  const points = [];
+  for (const la of lats) for (const lo of lons) points.push({ lat: la, lon: lo });
+  // Open-Meteo allows comma-separated lat/lon for multi-point (max ~50 per request)
+  const batchSize = 40;
+  const results = [];
+  for (let i = 0; i < points.length; i += batchSize) {
+    const batch = points.slice(i, i + batchSize);
+    const latStr = batch.map(p => p.lat).join(",");
+    const lonStr = batch.map(p => p.lon).join(",");
+    const url = `https://marine-api.open-meteo.com/v1/marine?latitude=${latStr}&longitude=${lonStr}&hourly=wave_height,wave_direction,wave_period,swell_wave_height,swell_wave_period,swell_wave_direction&forecast_days=1&timeformat=unixtime`;
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) continue;
+      const data = await resp.json();
+      // Multi-point returns array; single returns object
+      const arr = Array.isArray(data) ? data : [data];
+      arr.forEach((d, j) => {
+        if (d.error) { results.push({ ...batch[j], weather: null }); return; }
+        const h = d.hourly;
+        const now = Date.now();
+        const idx = h.time.reduce((best, t, k) => Math.abs(t * 1000 - now) < Math.abs(h.time[best] * 1000 - now) ? k : best, 0);
+        results.push({
+          ...batch[j],
+          weather: {
+            waveHeight: h.wave_height?.[idx], wavePeriod: h.wave_period?.[idx], waveDir: h.wave_direction?.[idx],
+            swellHeight: h.swell_wave_height?.[idx], swellPeriod: h.swell_wave_period?.[idx], swellDir: h.swell_wave_direction?.[idx],
+          }
+        });
+      });
+    } catch (e) { batch.forEach(p => results.push({ ...p, weather: null })); }
+  }
+  return { results, gridRes, bounds: { south, north, west, east } };
+}
+
+function SeaWeatherGrid({ gridData, overlayMode, gridRes, shipTr, shipSpeed, shipHeading }) {
+  if (!gridData || gridData.length === 0) return null;
+  const half = gridRes / 2;
+  return (<>
+    {gridData.map((pt, i) => {
+      if (!pt.weather) return null;
+      let color, value, label;
+      if (overlayMode === "waveHeight") {
+        color = waveHeightColor(pt.weather.waveHeight);
+        value = pt.weather.waveHeight;
+        label = `Hs ${value?.toFixed(1)}m`;
+      } else if (overlayMode === "wavePeriod") {
+        color = wavePeriodColor(pt.weather.wavePeriod);
+        value = pt.weather.wavePeriod;
+        label = `Tw ${value?.toFixed(1)}s`;
+      } else if (overlayMode === "risk" && shipTr > 0) {
+        const relHdg = pt.weather.waveDir != null ? ((pt.weather.waveDir - (shipHeading || 0) + 360) % 360) : 0;
+        const Te = calcEncounterPeriod(pt.weather.wavePeriod || 0, shipSpeed || 15, relHdg);
+        const ratio = calcParamRatio(shipTr, Te);
+        const sev = getRiskSeverity(ratio);
+        color = riskColor(sev);
+        label = `${getRiskLabel(sev)} R=${ratio?.toFixed(2) || "?"}`;
+      } else {
+        color = waveHeightColor(pt.weather.waveHeight);
+        label = `Hs ${pt.weather.waveHeight?.toFixed(1)}m`;
+      }
+      if (color === "transparent") return null;
+      return (
+        <Rectangle key={i}
+          bounds={[[pt.lat - half, pt.lon - half], [pt.lat + half, pt.lon + half]]}
+          pathOptions={{ color: color, fillColor: color, fillOpacity: 0.25, weight: 0.5, opacity: 0.3 }}>
+          <Tooltip sticky>
+            <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10 }}>
+              <div style={{ fontWeight: 700, color }}>{label}</div>
+              <div>{pt.lat.toFixed(1)}°, {pt.lon.toFixed(1)}°</div>
+              {pt.weather.swellHeight > 0 && <div>Swell: {pt.weather.swellHeight?.toFixed(1)}m / {pt.weather.swellPeriod?.toFixed(1)}s</div>}
+              {pt.weather.waveDir != null && <div>Dir: {pt.weather.waveDir?.toFixed(0)}°T</div>}
+            </div>
+          </Tooltip>
+        </Rectangle>
+      );
+    })}
+  </>);
 }
 
 // ─── Weather along route fetcher ──────────────────────────────────────────────
@@ -106,6 +223,13 @@ export default function RouteChart({ shipParams }) {
   const [selectedWP, setSelectedWP] = useState(null);
   const [showWeatherOverlay, setShowWeatherOverlay] = useState(true);
   const [sampleInterval, setSampleInterval] = useState(100);
+  const [seaGrid, setSeaGrid] = useState(null);
+  const [seaGridLoading, setSeaGridLoading] = useState(false);
+  const [seaGridError, setSeaGridError] = useState(null);
+  const [seaGridMode, setSeaGridMode] = useState("waveHeight");
+  const [seaGridRes, setSeaGridRes] = useState(2.0);
+  const [showSeaGrid, setShowSeaGrid] = useState(true);
+  const mapRef = useRef(null);
   const fileInputRef = useRef(null);
 
   // Compute stats when route changes
@@ -161,6 +285,23 @@ export default function RouteChart({ shipParams }) {
       setWeatherError(err.message);
     }
     setWeatherLoading(false);
+  };
+
+  // ─── Sea area grid weather fetch ──────────────────────────────────────────
+  const fetchSeaGridWeather = async () => {
+    const map = mapRef.current;
+    if (!map) return;
+    setSeaGridLoading(true);
+    setSeaGridError(null);
+    try {
+      const b = map.getBounds();
+      const bounds = { south: b.getSouth(), north: b.getNorth(), west: b.getWest(), east: b.getEast() };
+      const data = await fetchGridWeather(bounds, seaGridRes);
+      setSeaGrid(data);
+    } catch (err) {
+      setSeaGridError(err.message);
+    }
+    setSeaGridLoading(false);
   };
 
   // Compute risk for each weather point
@@ -236,6 +377,74 @@ export default function RouteChart({ shipParams }) {
           </div>
         )}
 
+        {/* Sea Area Weather Overlay */}
+        <div style={{ background: panelBg, borderRadius: 8, padding: 16, border: "1px solid #334155" }}>
+          {sectionHeader("Sea Area Weather")}
+          <div style={{ color: "#94A3B8", fontSize: 10, marginBottom: 8, lineHeight: 1.5 }}>
+            Fetch gridded weather for the visible chart area. Pan/zoom to region of interest first.
+          </div>
+          <label style={labelStyle}>Grid Resolution (°)</label>
+          <select value={seaGridRes} onChange={(e) => setSeaGridRes(parseFloat(e.target.value))} style={{ ...inputStyle, marginBottom: 8, cursor: "pointer" }}>
+            <option value={1.0}>1.0° (fine — slow)</option>
+            <option value={2.0}>2.0° (standard)</option>
+            <option value={3.0}>3.0° (coarse — fast)</option>
+            <option value={5.0}>5.0° (overview)</option>
+          </select>
+          <label style={labelStyle}>Overlay Mode</label>
+          <select value={seaGridMode} onChange={(e) => setSeaGridMode(e.target.value)} style={{ ...inputStyle, marginBottom: 8, cursor: "pointer" }}>
+            <option value="waveHeight">Wave Height (Hs)</option>
+            <option value="wavePeriod">Wave Period (Tw)</option>
+            <option value="risk">Parametric Roll Risk</option>
+          </select>
+          <button onClick={fetchSeaGridWeather} disabled={seaGridLoading} style={{ ...btnStyle, width: "100%", background: seaGridLoading ? "#334155" : "linear-gradient(90deg, #22D3EE, #3B82F6)", color: "#0F172A" }}>
+            {seaGridLoading ? "FETCHING GRID..." : "🌊 FETCH SEA WEATHER"}
+          </button>
+          {seaGridError && <div style={{ color: "#EF4444", fontSize: 10, marginTop: 6 }}>{seaGridError}</div>}
+          {seaGrid && <div style={{ color: "#64748B", fontSize: 9, marginTop: 6 }}>{seaGrid.results.length} grid points fetched</div>}
+          <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, cursor: "pointer" }}>
+            <input type="checkbox" checked={showSeaGrid} onChange={(e) => setShowSeaGrid(e.target.checked)} style={{ accentColor: "#22D3EE" }} />
+            <span style={{ color: "#94A3B8", fontSize: 11 }}>Show sea weather overlay</span>
+          </label>
+          {/* Legend */}
+          {seaGrid && showSeaGrid && (
+            <div style={{ marginTop: 8, padding: 8, background: "#0F172A", borderRadius: 4, border: "1px solid #334155" }}>
+              <div style={{ color: "#64748B", fontSize: 9, fontWeight: 700, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.1em" }}>
+                {seaGridMode === "waveHeight" ? "Wave Height (m)" : seaGridMode === "wavePeriod" ? "Wave Period (s)" : "Param. Risk"}
+              </div>
+              {seaGridMode === "waveHeight" && (
+                <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+                  {[["<0.5", "#0D9488"], ["0.5-1", "#16A34A"], ["1-2", "#22D3EE"], ["2-3", "#3B82F6"], ["3-4", "#A855F7"], ["4-5", "#D97706"], ["5-7", "#EA580C"], ["7+", "#DC2626"]].map(([l, c]) => (
+                    <div key={l} style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: 1, background: c }} />
+                      <span style={{ fontSize: 8, color: "#94A3B8" }}>{l}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {seaGridMode === "wavePeriod" && (
+                <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+                  {[["<4s", "#22D3EE"], ["4-6", "#3B82F6"], ["6-8", "#16A34A"], ["8-10", "#CA8A04"], ["10-12", "#D97706"], ["12-15", "#EA580C"], ["15+", "#DC2626"]].map(([l, c]) => (
+                    <div key={l} style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: 1, background: c }} />
+                      <span style={{ fontSize: 8, color: "#94A3B8" }}>{l}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+              {seaGridMode === "risk" && (
+                <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
+                  {[["MIN", "#0D9488"], ["LOW", "#16A34A"], ["MOD", "#CA8A04"], ["ELV", "#D97706"], ["HIGH", "#EA580C"], ["CRIT", "#DC2626"]].map(([l, c]) => (
+                    <div key={l} style={{ display: "flex", alignItems: "center", gap: 2 }}>
+                      <div style={{ width: 8, height: 8, borderRadius: 1, background: c }} />
+                      <span style={{ fontSize: 8, color: "#94A3B8" }}>{l}</span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+
         {/* Leg Table */}
         {routeStats && (
           <div style={{ background: panelBg, borderRadius: 8, padding: 16, border: "1px solid #334155", overflowY: "auto", maxHeight: 250 }}>
@@ -282,6 +491,13 @@ export default function RouteChart({ shipParams }) {
                 attribution='&copy; <a href="https://www.openseamap.org">OpenSeaMap</a>'
                 opacity={0.7}
               />
+              <CaptureMap mapRef={mapRef} />
+              {/* Sea area weather grid */}
+              {showSeaGrid && seaGrid && (
+                <SeaWeatherGrid gridData={seaGrid.results} overlayMode={seaGridMode}
+                  gridRes={seaGrid.gridRes} shipTr={shipParams?.Tr || 0}
+                  shipSpeed={shipParams?.speed || 15} shipHeading={shipParams?.heading || 0} />
+              )}
               {/* Fit bounds */}
               <FitBounds waypoints={route.waypoints} />
               {/* Route polyline */}
@@ -330,14 +546,21 @@ export default function RouteChart({ shipParams }) {
               ))}
             </MapContainer>
           ) : (
-            /* Empty state */
-            <div style={{ height: "100%", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 40 }}>
-              <div style={{ fontSize: 48, marginBottom: 12 }}>🗺️</div>
-              <div style={{ color: "#94A3B8", fontSize: 14, fontWeight: 700, marginBottom: 8 }}>No Route Loaded</div>
-              <div style={{ color: "#64748B", fontSize: 11, textAlign: "center", maxWidth: 400, lineHeight: 1.6 }}>
-                Import a route file from your ECDIS system (Furuno, JRC, Transas, etc.) using the panel on the left, or load the demo North Atlantic route to get started.
-              </div>
-            </div>
+            /* Default map (no route loaded) — still supports sea weather overlay */
+            <MapContainer center={[45, -20]} zoom={4}
+              style={{ height: "100%", width: "100%", background: "#0B1120" }}
+              zoomControl={true} attributionControl={true}>
+              <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>' />
+              <TileLayer url="https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png"
+                attribution='&copy; <a href="https://www.openseamap.org">OpenSeaMap</a>' opacity={0.7} />
+              <CaptureMap mapRef={mapRef} />
+              {showSeaGrid && seaGrid && (
+                <SeaWeatherGrid gridData={seaGrid.results} overlayMode={seaGridMode}
+                  gridRes={seaGrid.gridRes} shipTr={shipParams?.Tr || 0}
+                  shipSpeed={shipParams?.speed || 15} shipHeading={shipParams?.heading || 0} />
+              )}
+            </MapContainer>
           )}
         </div>
 
