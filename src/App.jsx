@@ -263,6 +263,7 @@ function NauticalCoordInput({ label, deg, min, hemi, onDegChange, onMinChange, o
 const PRESETS = {
   container_large: { name: "Large Container (14,000 TEU)", Lwl: 350, B: 48.2, d: 14.5, GM: 1.8, Cb: 0.65 },
   container_med: { name: "Medium Container (4,000 TEU)", Lwl: 260, B: 32.2, d: 12.0, GM: 1.5, Cb: 0.62 },
+  container_small: { name: "Small Container (1,000 TEU)", Lwl: 150, B: 25.0, d: 8.5, GM: 1.2, Cb: 0.60 },
   pcc: { name: "Pure Car Carrier", Lwl: 199, B: 32.3, d: 9.2, GM: 2.0, Cb: 0.58 },
   tanker: { name: "VLCC Tanker", Lwl: 320, B: 58, d: 20.5, GM: 5.5, Cb: 0.82 },
   bulk: { name: "Capesize Bulker", Lwl: 280, B: 45, d: 17.0, GM: 3.2, Cb: 0.85 },
