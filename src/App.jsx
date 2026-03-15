@@ -76,11 +76,20 @@ const WEATHER_SOURCES = {
 async function fetchWeatherData(sourceKey, lat, lon) {
   const src = WEATHER_SOURCES[sourceKey];
   const url = src.buildUrl(lat, lon);
-  const resp = await fetch(url);
-  if (!resp.ok) throw new Error(`${src.name}: HTTP ${resp.status}`);
-  const data = await resp.json();
-  if (data.error) throw new Error(`${src.name}: ${data.reason}`);
-  return src.parse(data);
+  // Retry up to 3 times on 429 with exponential backoff
+  for (let attempt = 0; attempt < 4; attempt++) {
+    const resp = await fetch(url);
+    if (resp.status === 429) {
+      const wait = Math.min(2000 * Math.pow(2, attempt), 20000);
+      await new Promise(r => setTimeout(r, wait));
+      continue;
+    }
+    if (!resp.ok) throw new Error(`${src.name}: HTTP ${resp.status}`);
+    const data = await resp.json();
+    if (data.error) throw new Error(`${src.name}: ${data.reason}`);
+    return src.parse(data);
+  }
+  throw new Error(`${src.name}: rate limited after retries`);
 }
 
 // ─── SVG Components ───────────────────────────────────────────────────────────
@@ -297,7 +306,27 @@ export default function ParametricRollingCalculator() {
     ? calcKwonSpeedLossPct(waveHeight, waveDir ?? heading, heading, ship.Cb ?? 0.75, ship.Lwl)
     : 0;
   const paramRisk3factor = motions?.paramRisk ?? 0;
-  const fetchData = async () => { setLoading(true); setError(null); try { const results = await Promise.allSettled([activeSources.includes("open-meteo-marine") ? fetchWeatherData("open-meteo-marine", lat, lon) : Promise.resolve(null), activeSources.includes("open-meteo-weather") ? fetchWeatherData("open-meteo-weather", lat, lon) : Promise.resolve(null)]); if (results[0].status === "fulfilled" && results[0].value) setMarineData(results[0].value); if (results[1].status === "fulfilled" && results[1].value) setWindData(results[1].value); const errors = results.filter(r => r.status === "rejected").map(r => r.reason.message); if (errors.length > 0 && results.every(r => r.status === "rejected")) { setError(errors.join("; ")); } setLastFetch(new Date()); setHourIdx(0); } catch (e) { setError(e.message); } setLoading(false); };
+  const fetchData = async () => {
+    setLoading(true); setError(null);
+    try {
+      // Sequential — never fire both simultaneously to avoid 429
+      if (activeSources.includes("open-meteo-marine")) {
+        try {
+          const d = await fetchWeatherData("open-meteo-marine", lat, lon);
+          setMarineData(d);
+        } catch(e) { setError(e.message); }
+      }
+      if (activeSources.includes("open-meteo-weather")) {
+        await new Promise(r => setTimeout(r, 1200)); // gap between the two endpoints
+        try {
+          const d = await fetchWeatherData("open-meteo-weather", lat, lon);
+          setWindData(d);
+        } catch(e) { if (!error) setError(e.message); }
+      }
+      setLastFetch(new Date()); setHourIdx(0);
+    } catch(e) { setError(e.message); }
+    setLoading(false);
+  };
   const shipParams = { Tr, speed, relHeading, wavePeriod };
   const sectionHeader = (text) => (<div style={{ color: "#F59E0B", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", borderBottom: "1px solid #1E293B", paddingBottom: 6, marginBottom: 10, fontFamily: "'JetBrains Mono', monospace" }}>{text}</div>);
   const statBox = (label, value, unit, color = "#E2E8F0") => (<div style={{ textAlign: "center", padding: "6px 4px" }}><div style={{ color, fontSize: 18, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{typeof value === "number" ? (isFinite(value) ? value.toFixed(2) : "∞") : value}</div><div style={{ color: "#64748B", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.1em", fontFamily: "'JetBrains Mono', monospace" }}>{label} {unit && <span style={{ color: "#475569" }}>({unit})</span>}</div></div>);

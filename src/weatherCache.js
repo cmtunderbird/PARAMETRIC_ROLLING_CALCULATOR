@@ -7,9 +7,11 @@
 //   • Grid resolution changes
 
 const STALE_MS = {
-  marine:  6 * 3600 * 1000,   // GFS/CMEMS update every 6 h
-  atmo:    3 * 3600 * 1000,   // GFS atmospheric every 3 h
-  voyage:  6 * 3600 * 1000,
+  marine:        6 * 3600 * 1000,   // Open-Meteo marine / CMEMS wave (6 h)
+  atmo:          3 * 3600 * 1000,   // GFS atmospheric (3 h)
+  voyage:        6 * 3600 * 1000,
+  marine_cmems:  3 * 3600 * 1000,   // CMEMS wave analysis+forecast (3-hourly cadence)
+  physics_cmems: 1 * 3600 * 1000,   // CMEMS physics uo/vo/SST (1-hourly cadence)
 };
 const CACHE_VER = "v1";  // bump to nuke all caches after schema changes
 const MAX_ENTRIES = 8;   // keep at most 8 cached areas in localStorage

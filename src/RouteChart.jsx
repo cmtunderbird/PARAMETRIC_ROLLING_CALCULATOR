@@ -15,8 +15,12 @@ import { autoDetectAndParse, computeRouteStats, generateWeatherSamplePoints,
          generateSampleRTZ } from "./RouteParser.js";
 import MeteoCanvasOverlay, { getColorLegend } from "./MeteoOverlay.jsx";
 import { buildGridPoints, fetchMarineGrid, fetchAtmosphericGrid,
+         fetchMarineUnified, fetchCmemsPhysicsGrid,
          closestHourIdx, snapshotAt, calcVoyageETAs } from "./weatherApi.js";
 import { cacheStatus, cacheClearAll, cacheInvalidate } from "./weatherCache.js";
+import { testCmemsConnection, loadCmemsCredentials,
+         saveCmemsCredentials, clearCmemsCredentials,
+         CMEMS_WAVE_DATASET, CMEMS_PHYSICS_DATASET } from "./cmemsProvider.js";
 import { calcMotions, getSafetyCostFactor, getMotionStatus,
          getRiskLevel, calcParametricRiskRatio, calcEncounterPeriod } from "./physics.js";
 import { calcCurrentPosition, ShipPositionLayer,
@@ -129,6 +133,18 @@ export default function RouteChart({ shipParams }) {
   const [showAtmo,   setShowAtmo]   = useState(true);
   const [gridLoading,setGridLoading]= useState(false);
   const [gridError,  setGridError]  = useState(null);
+  const [gridProgress, setGridProgress] = useState(null); // {step, done, total}
+
+  // ── CMEMS provider state ──
+  const [cmemsUser,      setCmemsUser]      = useState(() => loadCmemsCredentials().user);
+  const [cmemsPass,      setCmemsPass]      = useState(() => loadCmemsCredentials().pass);
+  const [cmemsProvider,  setCmemsProvider]  = useState("auto");   // "openmeteo" | "cmems" | "auto"
+  const [cmemsTestMsg,   setCmemsTestMsg]   = useState(null);
+  const [cmemsTestOk,    setCmemsTestOk]    = useState(null);
+  const [cmemsTestLoading, setCmemsTestLoading] = useState(false);
+  const [physicsGrid,    setPhysicsGrid]    = useState(null);      // CMEMS currents/SST
+  const [showCurrents,   setShowCurrents]   = useState(true);
+  const cmemsCredentials = cmemsUser && cmemsPass ? { user: cmemsUser, pass: cmemsPass } : null;
   const [chartHourIdx, setChartHourIdx] = useState(0); // forecast scrubber
   const [stepSize,     setStepSize]     = useState(6);  // 1 | 3 | 6 | 12
   const [playing,      setPlaying]      = useState(false);
@@ -237,17 +253,15 @@ export default function RouteChart({ shipParams }) {
       const totalPtNM = cumDists[cumDists.length-1]||1;
       const ptsWithETA = pts.map((p,i)=>({ ...p, etaMs: bospMs+(cumDists[i]/totalPtNM)*(eospMs-bospMs) }));
 
-      // Fetch 7-day marine + atmospheric forecasts for all points (batched)
-      const { buildGridPoints:_b, fetchMarineGrid:fmg, fetchAtmosphericGrid:fag, closestHourIdx:chi, snapshotAt:sa } = { buildGridPoints, fetchMarineGrid, fetchAtmosphericGrid, closestHourIdx, snapshotAt };
-
-      // Deduplicate nearby points to ~1° for fetch efficiency
+      // Deduplicate to ~1° grid for fetch efficiency
       const uniq=[], seen=new Set();
       for (const p of ptsWithETA){ const k=`${p.lat.toFixed(1)},${p.lon.toFixed(1)}`; if(!seen.has(k)){seen.add(k);uniq.push(p);} }
 
-      const [marineRaw, atmoRaw] = await Promise.all([fmg(uniq,7), fag(uniq,7)]);
-      // unwrap cache envelope — fmg/fag now return {results, fromCache, fetchedAt}
-      const mResults = Array.isArray(marineRaw) ? marineRaw : (marineRaw?.results ?? []);
-      const aResults = Array.isArray(atmoRaw)   ? atmoRaw   : (atmoRaw?.results   ?? []);
+      // Fetch 7-day forecasts — marine first, then atmospheric (sequential to avoid 429)
+      const marineRaw = await fetchMarineUnified(uniq, 7, null, 2.0, cmemsProvider, cmemsCredentials);
+      const atmoRaw   = await fetchAtmosphericGrid(uniq, 7, null, 2.0);
+      const mResults  = Array.isArray(marineRaw) ? marineRaw : (marineRaw?.results ?? []);
+      const aResults  = Array.isArray(atmoRaw)   ? atmoRaw   : (atmoRaw?.results   ?? []);
       const marineMap = new Map(mResults.map(r=>[`${r.lat.toFixed(1)},${r.lon.toFixed(1)}`,r]));
       const atmoMap   = new Map(aResults.map(r=>[`${r.lat.toFixed(1)},${r.lon.toFixed(1)}`,r]));
 
@@ -279,25 +293,47 @@ export default function RouteChart({ shipParams }) {
   // ── Sea chart synoptic overlay ──
   const fetchSeaOverlay = async (forceRefresh = false) => {
     const map = mapRef.current; if (!map) return;
-    setGridLoading(true); setGridError(null);
+    setGridLoading(true); setGridError(null); setGridProgress(null);
     try {
       const b = map.getBounds();
       const bounds = { south:b.getSouth(), north:b.getNorth(), west:b.getWest(), east:b.getEast() };
       const { points, bounds:gb } = buildGridPoints(bounds, gridRes);
-      if (points.length > 3000) throw new Error(`Grid too large (${points.length} pts). Zoom in or use coarser resolution.`);
-      if (forceRefresh) { cacheInvalidate("marine", gb, gridRes); cacheInvalidate("atmo", gb, gridRes); }
-      const [mResult, aResult] = await Promise.all([
-        fetchMarineGrid(points, 7, gb, gridRes),
-        showAtmo ? fetchAtmosphericGrid(points, 7, gb, gridRes) : Promise.resolve({ results:[], fromCache:false, fetchedAt:Date.now() }),
-      ]);
+      if (points.length > 1500) throw new Error(`Grid too large (${points.length} pts). Zoom in or use coarser resolution.`);
+      if (forceRefresh) {
+        cacheInvalidate("marine", gb, gridRes); cacheInvalidate("atmo", gb, gridRes);
+        cacheInvalidate("marine_cmems", gb, 0.083); cacheInvalidate("physics_cmems", gb, 0.083);
+      }
+
+      // ── Step 1: Marine (CMEMS or Open-Meteo) — sequential, NOT parallel ──
+      setGridProgress({ step:"Marine waves", done:0, total: Math.ceil(points.length/10) });
+      const mResult = await fetchMarineUnified(points, 7, gb, gridRes, cmemsProvider, cmemsCredentials,
+        (done,total) => setGridProgress({ step:"Marine waves", done, total }));
       setMarineGrid({ results:mResult.results, gridRes, bounds:gb });
-      setAtmoGrid(showAtmo ? { results:aResult.results, gridRes, bounds:gb } : null);
-      setChartHourIdx(0); setPlaying(false);
       setLastFetchSrc(mResult.fromCache ? "cache" : "network");
       setGridFetchedAt(mResult.fetchedAt);
+
+      // ── Step 2: Atmospheric (GFS) — after marine completes ──
+      if (showAtmo) {
+        setGridProgress({ step:"GFS wind + MSLP", done:0, total: Math.ceil(points.length/10) });
+        const aResult = await fetchAtmosphericGrid(points, 7, gb, gridRes,
+          (done,total) => setGridProgress({ step:"GFS wind + MSLP", done, total }));
+        setAtmoGrid({ results:aResult.results, gridRes, bounds:gb });
+      } else { setAtmoGrid(null); }
+
+      // ── Step 3: CMEMS Physics (currents + SST) — only if credentials present ──
+      if (cmemsCredentials && showCurrents) {
+        setGridProgress({ step:"CMEMS currents", done:0, total:1 });
+        try {
+          const phyResult = await fetchCmemsPhysicsGrid(
+            cmemsCredentials.user, cmemsCredentials.pass, points, gb, 0.083);
+          setPhysicsGrid({ results:phyResult.results, gridRes:0.083, bounds:gb });
+        } catch(e) { console.warn("CMEMS physics failed:", e.message); }
+      }
+
+      setChartHourIdx(0); setPlaying(false);
       setCacheInfo(cacheStatus());
     } catch(e){ setGridError(e.message); }
-    setGridLoading(false);
+    setGridLoading(false); setGridProgress(null);
   };
 
   // ── Computed voyage summary ──
@@ -400,7 +436,87 @@ export default function RouteChart({ shipParams }) {
           </div>}
         </Panel>}
 
-        {/* Sea Chart Overlay */}
+        {/* ── CMEMS Provider Configuration ── */}
+        <Panel>
+          {SH("🛰 Weather Provider")}
+          {/* Provider selector */}
+          <div style={{display:"flex",gap:4,marginBottom:10}}>
+            {[
+              {key:"openmeteo", label:"Open-Meteo", desc:"Free · GFS/ECMWF · 0.25°"},
+              {key:"auto",      label:"Auto",        desc:"CMEMS if creds, else OM"},
+              {key:"cmems",     label:"CMEMS",        desc:"0.083° · same as windmar"},
+            ].map(({key,label,desc})=>(
+              <button key={key} onClick={()=>setCmemsProvider(key)}
+                style={{...btnSt,flex:1,padding:"5px 4px",fontSize:9,
+                  background: cmemsProvider===key?"linear-gradient(90deg,#7C3AED,#6D28D9)":"#0F172A",
+                  color: cmemsProvider===key?"#fff":"#94A3B8",
+                  border:`1px solid ${cmemsProvider===key?"#7C3AED":"#334155"}`,
+                  lineHeight:1.3,whiteSpace:"nowrap"}}>
+                <div style={{fontWeight:800}}>{label}</div>
+                <div style={{fontSize:8,opacity:.8}}>{desc}</div>
+              </button>
+            ))}
+          </div>
+
+          {/* Dataset info */}
+          <div style={{padding:"5px 8px",background:"#0F172A",borderRadius:4,
+            border:"1px solid #334155",marginBottom:8,fontSize:9,fontFamily:"'JetBrains Mono',monospace",lineHeight:1.7}}>
+            <div style={{color:"#A78BFA",fontWeight:700,marginBottom:3}}>Active datasets</div>
+            {(cmemsProvider==="cmems"||(cmemsProvider==="auto"&&cmemsCredentials)) ? <>
+              <div><span style={{color:"#64748B"}}>Waves:</span> <span style={{color:"#22D3EE"}}>{CMEMS_WAVE_DATASET}</span></div>
+              <div><span style={{color:"#64748B"}}>Physics:</span> <span style={{color:"#22D3EE"}}>{CMEMS_PHYSICS_DATASET}</span></div>
+              <div><span style={{color:"#64748B"}}>Wind:</span> <span style={{color:"#94A3B8"}}>GFS via Open-Meteo (always)</span></div>
+            </> : <>
+              <div><span style={{color:"#64748B"}}>Waves:</span> <span style={{color:"#94A3B8"}}>Open-Meteo Marine (ECMWF WAM)</span></div>
+              <div><span style={{color:"#64748B"}}>Wind:</span> <span style={{color:"#94A3B8"}}>Open-Meteo GFS Seamless</span></div>
+              <div><span style={{color:"#64748B"}}>Currents:</span> <span style={{color:"#94A3B8"}}>Open-Meteo HYCOM proxy</span></div>
+            </>}
+          </div>
+
+          {/* Credentials */}
+          <label style={lblSt}>CMEMS Username <span style={{color:"#475569",fontSize:8}}>marine.copernicus.eu</span></label>
+          <input value={cmemsUser} onChange={e=>{setCmemsUser(e.target.value);saveCmemsCredentials(e.target.value,cmemsPass);}}
+            placeholder="your.email@example.com" autoComplete="username"
+            style={{...inputSt,marginBottom:6}} />
+          <label style={lblSt}>CMEMS Password</label>
+          <input type="password" value={cmemsPass}
+            onChange={e=>{setCmemsPass(e.target.value);saveCmemsCredentials(cmemsUser,e.target.value);}}
+            placeholder="••••••••" autoComplete="current-password"
+            style={{...inputSt,marginBottom:8}} />
+
+          <div style={{display:"flex",gap:6,marginBottom:6}}>
+            <button onClick={async()=>{
+              setCmemsTestLoading(true); setCmemsTestMsg(null);
+              const r = await testCmemsConnection(cmemsUser, cmemsPass);
+              setCmemsTestOk(r.ok); setCmemsTestMsg(r.message); setCmemsTestLoading(false);
+            }} disabled={cmemsTestLoading||!cmemsUser||!cmemsPass}
+              style={{...btnSt,flex:1,padding:"5px 8px",fontSize:10,
+                background:"linear-gradient(90deg,#334155,#475569)",color:"#E2E8F0"}}>
+              {cmemsTestLoading?"TESTING...":"🔌 TEST CONNECTION"}
+            </button>
+            <button onClick={()=>{clearCmemsCredentials();setCmemsUser("");setCmemsPass("");setCmemsTestMsg(null);}}
+              style={{...btnSt,padding:"5px 8px",fontSize:10,background:"#0F172A",
+                color:"#EF4444",border:"1px solid #EF444430"}}>✕</button>
+          </div>
+          {cmemsTestMsg && <div style={{fontSize:9,padding:"5px 8px",borderRadius:4,marginBottom:6,
+            background: cmemsTestOk?"#16A34A20":"#DC262620",
+            border:`1px solid ${cmemsTestOk?"#16A34A":"#DC2626"}40`,
+            color: cmemsTestOk?"#86EFAC":"#FCA5A5",
+            fontFamily:"'JetBrains Mono',monospace",lineHeight:1.5}}>
+            {cmemsTestMsg}
+          </div>}
+          {!cmemsUser && <div style={{fontSize:9,color:"#475569",lineHeight:1.5}}>
+            Free account: <a href="https://data.marine.copernicus.eu/register"
+              target="_blank" rel="noreferrer" style={{color:"#7C3AED"}}>data.marine.copernicus.eu/register</a>
+          </div>}
+
+          <label style={{display:"flex",alignItems:"center",gap:6,marginTop:4,cursor:"pointer"}}>
+            <input type="checkbox" checked={showCurrents} onChange={e=>setShowCurrents(e.target.checked)} style={{accentColor:"#22D3EE"}}/>
+            <span style={{color:"#94A3B8",fontSize:11}}>Show ocean currents (cyan arrows)</span>
+          </label>
+        </Panel>
+
+        {/* ── Sea Chart Overlay ── */}
         <Panel>
           {SH("🗺 Synoptic Chart Overlay")}
           <div style={{color:"#94A3B8",fontSize:10,lineHeight:1.5,marginBottom:8}}>
@@ -426,8 +542,22 @@ export default function RouteChart({ shipParams }) {
           </label>
           <button onClick={()=>fetchSeaOverlay(false)} disabled={anyLoading}
             style={{...btnSt,width:"100%",background:anyLoading?"#334155":"linear-gradient(90deg,#22D3EE,#3B82F6)",color:"#0F172A"}}>
-            {gridLoading?"FETCHING SYNOPTIC DATA...":"🌀 FETCH SYNOPTIC CHART"}
+            {gridLoading ? (gridProgress ? `${gridProgress.step}…` : "STARTING…") : "🌀 FETCH SYNOPTIC CHART"}
           </button>
+          {/* Progress bar */}
+          {gridLoading && gridProgress && (
+            <div style={{marginTop:4}}>
+              <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:"#64748B",marginBottom:2,fontFamily:"'JetBrains Mono',monospace"}}>
+                <span>{gridProgress.step}</span>
+                <span>{gridProgress.done}/{gridProgress.total} batches</span>
+              </div>
+              <div style={{background:"#0F172A",borderRadius:3,height:5,border:"1px solid #334155"}}>
+                <div style={{height:"100%",borderRadius:3,transition:"width 0.3s",
+                  background:"linear-gradient(90deg,#22D3EE,#3B82F6)",
+                  width:`${gridProgress.total>0?(gridProgress.done/gridProgress.total)*100:0}%`}}/>
+              </div>
+            </div>
+          )}
           <button onClick={()=>fetchSeaOverlay(true)} disabled={anyLoading}
             style={{...btnSt,width:"100%",marginTop:4,background:anyLoading?"#1E293B":"#1E293B",
               color:"#EF4444",border:"1px solid #EF444440",fontSize:10}}>
@@ -437,7 +567,10 @@ export default function RouteChart({ shipParams }) {
           {marineGrid&&<div style={{color:"#64748B",fontSize:9,marginTop:4}}>
             {marineGrid.results.length} pts · {maxHourIdx}h forecast &nbsp;·&nbsp;
             <span style={{color:lastFetchSrc==="cache"?"#22D3EE":"#16A34A"}}>
-              {lastFetchSrc==="cache"?"📦 served from cache":"🌐 fetched live"}
+              {lastFetchSrc==="cache"?"📦 cached":"🌐 fetched live"}
+            </span> &nbsp;·&nbsp;
+            <span style={{color:"#A78BFA"}}>
+              {marineGrid.results[0]?.source==="cmems"?"🛰 CMEMS 0.083°":"📡 Open-Meteo 0.25°"}
             </span>
           </div>}
           {/* Cache status */}
@@ -625,6 +758,7 @@ export default function RouteChart({ shipParams }) {
               <MeteoCanvasOverlay
                 marineGrid={marineGrid}
                 atmoGrid={showAtmo ? atmoGrid : null}
+                physicsGrid={showCurrents ? physicsGrid : null}
                 mode={gridMode}
                 shipParams={{Tr:shipParams?.Tr||14,speed:voyageSpeed,heading:0,Lwl:shipParams?.Lwl||200}}
                 hourIdx={chartHourIdx}

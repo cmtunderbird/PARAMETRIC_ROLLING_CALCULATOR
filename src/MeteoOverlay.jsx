@@ -261,8 +261,49 @@ function renderAtmoLayer(canvas, cols, rows, cw, ch, atmoResults, bounds, gridRe
   }
 }
 
-// ─── React component ─────────────────────────────────────────────────────────
-export default function MeteoCanvasOverlay({ marineGrid, atmoGrid, mode, shipParams, hourIdx=0 }) {
+// ── Layer 4: Ocean current arrows (CMEMS uo/vo or Open-Meteo proxy) ────────────
+function renderCurrentsLayer(canvas, cols, rows, cw, ch, physResults, bounds, gridRes, hourIdx) {
+  if (!physResults?.length) return;
+  const { south, north, west, east } = bounds;
+  const ctx = canvas.getContext("2d");
+  const cGrid = Array.from({length:rows},()=>Array(cols).fill(null));
+  const dGrid = Array.from({length:rows},()=>Array(cols).fill(null));
+  for (const pt of physResults) {
+    if (!pt.times) continue;
+    const idx = Math.min(hourIdx, pt.times.length-1);
+    const c = Math.round((pt.lon-west)/gridRes);
+    const r = Math.round((north-pt.lat)/gridRes);
+    if (r<0||r>=rows||c<0||c>=cols) continue;
+    cGrid[r][c] = pt.currentSpeed?.[idx] ?? null;
+    dGrid[r][c] = pt.currentDir?.[idx]   ?? null;
+  }
+  // Draw current arrows — every other grid point, scale length by speed
+  const step = cols > 10 ? 2 : 1;
+  ctx.strokeStyle = "rgba(34,211,238,0.70)";
+  ctx.fillStyle   = "rgba(34,211,238,0.70)";
+  ctx.lineWidth   = 1.5;
+  for (let r=0;r<rows;r+=step) {
+    for (let c=0;c<cols;c+=step) {
+      const spd = cGrid[r][c], dir = dGrid[r][c];
+      if (spd==null||dir==null||spd<0.05) continue;
+      const px = (c/(Math.max(cols-1,1)))*cw;
+      const py = (r/(Math.max(rows-1,1)))*ch;
+      const len = Math.min(spd*60, 28); // scale: 1 m/s ≈ 60px, cap 28
+      const ang = (dir-90)*Math.PI/180; // meteorological to math convention
+      const ex = px+len*Math.cos(ang), ey = py+len*Math.sin(ang);
+      // Arrow shaft
+      ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(ex,ey); ctx.stroke();
+      // Arrowhead
+      const ha=0.45, hl=7;
+      ctx.beginPath();
+      ctx.moveTo(ex,ey);
+      ctx.lineTo(ex-hl*Math.cos(ang-ha), ey-hl*Math.sin(ang-ha));
+      ctx.lineTo(ex-hl*Math.cos(ang+ha), ey-hl*Math.sin(ang+ha));
+      ctx.closePath(); ctx.fill();
+    }
+  }
+}
+export default function MeteoCanvasOverlay({ marineGrid, atmoGrid, physicsGrid, mode, shipParams, hourIdx=0 }) {
   const map = useMap();
   const overlayRef = useRef(null);
 
@@ -272,6 +313,8 @@ export default function MeteoCanvasOverlay({ marineGrid, atmoGrid, mode, shipPar
     const { canvas, cols, rows, cw, ch } = renderSynopticImage(marineGrid, atmoGrid, mode, shipParams, hourIdx);
     if (atmoGrid?.results?.length)
       renderAtmoLayer(canvas, cols, rows, cw, ch, atmoGrid.results, marineGrid.bounds, marineGrid.gridRes, hourIdx);
+    if (physicsGrid?.results?.length)
+      renderCurrentsLayer(canvas, cols, rows, cw, ch, physicsGrid.results, marineGrid.bounds, marineGrid.gridRes, hourIdx);
 
     const bounds = L.latLngBounds([[south,west],[north,east]]);
     if (overlayRef.current) { map.removeLayer(overlayRef.current); overlayRef.current=null; }
@@ -279,7 +322,7 @@ export default function MeteoCanvasOverlay({ marineGrid, atmoGrid, mode, shipPar
     ov.addTo(map);
     overlayRef.current = ov;
     return () => { if (overlayRef.current) { map.removeLayer(overlayRef.current); overlayRef.current=null; } };
-  }, [map, marineGrid, atmoGrid, mode, shipParams, hourIdx]);
+  }, [map, marineGrid, atmoGrid, physicsGrid, mode, shipParams, hourIdx]);
 
   useEffect(()=>()=>{ if(overlayRef.current){overlayRef.current.remove();overlayRef.current=null;} },[]);
   return null;
