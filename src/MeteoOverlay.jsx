@@ -74,8 +74,13 @@ function bilerp(grid, rows, cols, y, x) {
   const fx = x - x0, fy = y - y0;
   const v00 = grid[y0]?.[x0], v10 = grid[y0]?.[x1];
   const v01 = grid[y1]?.[x0], v11 = grid[y1]?.[x1];
-  if (v00 == null || v10 == null || v01 == null || v11 == null) return null;
-  return v00 * (1 - fx) * (1 - fy) + v10 * fx * (1 - fy) + v01 * (1 - fx) * fy + v11 * fx * fy;
+  // If all 4 corners valid: proper bilinear interpolation
+  if (v00 != null && v10 != null && v01 != null && v11 != null) {
+    return v00 * (1 - fx) * (1 - fy) + v10 * fx * (1 - fy) + v01 * (1 - fx) * fy + v11 * fx * fy;
+  }
+  // Fallback: average of whatever corners are valid (covers edge cells)
+  const vals = [v00, v10, v01, v11].filter(v => v != null);
+  return vals.length > 0 ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
 }
 
 // ─── Marching Squares Isoline Extraction ─────────────────────────────────────
@@ -134,6 +139,29 @@ function renderMeteoImage(gridData, mode, shipParams) {
         : mode === "wavePeriod" ? pt.weather.wavePeriod
         : calcRiskIntensity(pt.weather.wavePeriod, pt.weather.waveDir,
             shipParams?.Tr, shipParams?.speed, shipParams?.heading);
+    }
+  }
+
+  // Fill null cells (land/missing) with nearest-neighbor so gradient
+  // extends smoothly over land areas — no choppy edges
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (grid[r][c] != null) continue;
+        let sum = 0, cnt = 0;
+        for (let dr = -1; dr <= 1; dr++) {
+          for (let dc = -1; dc <= 1; dc++) {
+            if (dr === 0 && dc === 0) continue;
+            const nr = r + dr, nc = c + dc;
+            if (nr >= 0 && nr < rows && nc >= 0 && nc < cols && grid[nr][nc] != null) {
+              sum += grid[nr][nc]; cnt++;
+            }
+          }
+        }
+        if (cnt > 0) { grid[r][c] = sum / cnt; changed = true; }
+      }
     }
   }
 
