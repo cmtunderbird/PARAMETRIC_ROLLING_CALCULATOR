@@ -1,6 +1,14 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import RouteChart from "./RouteChart.jsx";
-import { G, KTS_TO_MS, DEG_TO_RAD, calcNaturalRollPeriod, calcWaveLength, calcEncounterPeriod, calcParametricRiskRatio, calcSynchronousRiskRatio, getRiskLevel } from "./physics.js";
+import {
+  G, KTS_TO_MS, DEG_TO_RAD,
+  calcNaturalRollPeriod, calcWaveLength,
+  calcEncounterPeriod, calcEncounterFrequency,
+  calcParametricRiskRatio, calcSynchronousRiskRatio,
+  calcParametricRollRisk, calcKwonSpeedLossPct,
+  calcMotions, getSafetyCostFactor, getMotionStatus,
+  getRiskLevel, SafetyLimits,
+} from "./physics.js";
 
 // ─── Nautical Coordinate Helpers (DD-MM.M N/S, DDD-MM.M E/W) ─────────────
 function decimalToNautical(decimal, isLat) {
@@ -273,6 +281,22 @@ export default function ParametricRollingCalculator() {
   const waveLength = calcWaveLength(wavePeriod);
   const waveLenRatio = ship.Lwl > 0 ? waveLength / ship.Lwl : 0;
   const overallRisk = getRiskLevel(paramRatio_wave !== null && paramRatio_swell !== null ? (Math.abs(paramRatio_wave - 1) < Math.abs(paramRatio_swell - 1) ? paramRatio_wave : paramRatio_swell) : paramRatio_wave ?? paramRatio_swell);
+
+  // ── Windmar full seakeeping motions ──
+  const motions = currentMarine ? calcMotions({
+    waveHeight_m: waveHeight, wavePeriod_s: wavePeriod, waveDir_deg: waveDir ?? heading,
+    swellHeight_m: swellHeight, swellPeriod_s: swellPeriod, swellDir_deg: swellDir ?? heading,
+    heading_deg: heading, speed_kts: speed,
+    Lwl: ship.Lwl, B: ship.B, GM: ship.GM, Tr,
+    bowFreeboard: 6.0, fp_from_midship: 88.0, bridge_from_midship: -70.0,
+  }) : null;
+  const windSpeed_kts = currentWind?.windSpeed ? currentWind.windSpeed / 1.852 : 0;
+  const costFactor = motions ? getSafetyCostFactor(motions, waveHeight, windSpeed_kts) : 1.0;
+  const motionStatus = getMotionStatus(motions, waveHeight, windSpeed_kts);
+  const speedLossPct = waveHeight > 0
+    ? calcKwonSpeedLossPct(waveHeight, waveDir ?? heading, heading, ship.Cb ?? 0.75, ship.Lwl)
+    : 0;
+  const paramRisk3factor = motions?.paramRisk ?? 0;
   const fetchData = async () => { setLoading(true); setError(null); try { const results = await Promise.allSettled([activeSources.includes("open-meteo-marine") ? fetchWeatherData("open-meteo-marine", lat, lon) : Promise.resolve(null), activeSources.includes("open-meteo-weather") ? fetchWeatherData("open-meteo-weather", lat, lon) : Promise.resolve(null)]); if (results[0].status === "fulfilled" && results[0].value) setMarineData(results[0].value); if (results[1].status === "fulfilled" && results[1].value) setWindData(results[1].value); const errors = results.filter(r => r.status === "rejected").map(r => r.reason.message); if (errors.length > 0 && results.every(r => r.status === "rejected")) { setError(errors.join("; ")); } setLastFetch(new Date()); setHourIdx(0); } catch (e) { setError(e.message); } setLoading(false); };
   const shipParams = { Tr, speed, relHeading, wavePeriod };
   const sectionHeader = (text) => (<div style={{ color: "#F59E0B", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", borderBottom: "1px solid #1E293B", paddingBottom: 6, marginBottom: 10, fontFamily: "'JetBrains Mono', monospace" }}>{text}</div>);
@@ -289,6 +313,8 @@ export default function ParametricRollingCalculator() {
         </div>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           {overallRisk.severity >= 3 && marineData && (<div style={{ background: overallRisk.color + "20", border: `1px solid ${overallRisk.color}`, borderRadius: 4, padding: "4px 12px", color: overallRisk.color, fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", animation: overallRisk.severity >= 4 ? "pulse 1.5s infinite" : "none" }}>⚠ {overallRisk.level} RISK</div>)}
+          {!isFinite(costFactor) && marineData && (<div style={{ background:"#7C3AED20", border:"1px solid #7C3AED", borderRadius:4, padding:"4px 12px", color:"#C4B5FD", fontSize:11, fontWeight:700, letterSpacing:"0.1em", animation:"pulse 1s infinite" }}>🚫 FORBIDDEN CONDITIONS</div>)}
+          {isFinite(costFactor) && costFactor >= 2 && marineData && (<div style={{ background:"#DC262620", border:"1px solid #DC2626", borderRadius:4, padding:"4px 12px", color:"#FCA5A5", fontSize:11, fontWeight:700, letterSpacing:"0.1em", animation:"pulse 1.5s infinite" }}>⚠ DANGEROUS MOTIONS</div>)}
           {lastFetch && (<div style={{ color: "#64748B", fontSize: 9 }}>Updated: {lastFetch.toLocaleTimeString()}</div>)}
           <div style={{ color: "#22D3EE", fontSize: 10, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", background: "#0F172A", padding: "4px 10px", borderRadius: 4, border: "1px solid #334155", lineHeight: 1.5, textAlign: "center" }}><div>{formatNauticalLat(latDeg, latMin, latHemi)}</div><div>{formatNauticalLon(lonDeg, lonMin, lonHemi)}</div></div>
         </div>
@@ -304,6 +330,46 @@ export default function ParametricRollingCalculator() {
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {panel(<>{sectionHeader("Parametric Roll Assessment")}<div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}><RiskGauge value={paramRatio_wave} label="Wave Param. Ratio (Tᵣ/2Tₑ)" /><RiskGauge value={paramRatio_swell} label="Swell Param. Ratio (Tᵣ/2Tₑ)" /></div><div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "1fr 1fr", gap: 4 }}><RiskGauge value={syncRatio} label="Synchronous Ratio (Tᵣ/Tₑ)" /><div style={{ textAlign: "center", padding: 10 }}><div style={{ color: "#94A3B8", fontSize: 9, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 4 }}>λ / L Ratio</div><div style={{ fontSize: 22, fontWeight: 800, fontFamily: "'JetBrains Mono', monospace", color: waveLenRatio > 0.8 && waveLenRatio < 1.3 ? "#DC2626" : waveLenRatio > 0.6 && waveLenRatio < 1.5 ? "#D97706" : "#16A34A" }}>{waveLenRatio > 0 ? waveLenRatio.toFixed(2) : "---"}</div><div style={{ color: "#64748B", fontSize: 9, marginTop: 2 }}>{waveLenRatio > 0.8 && waveLenRatio < 1.3 ? "⚠ DANGER: λ ≈ L" : waveLenRatio > 0.6 && waveLenRatio < 1.5 ? "CAUTION" : "OK"}</div></div></div></>)}
               {panel(<>{sectionHeader("Computed Values")}<div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 2 }}>{statBox("Nat. Roll Tᵣ", Tr, "s", "#3B82F6")}{statBox("Enc. Tₑ Wave", Te_wave, "s", "#F59E0B")}{statBox("Enc. Tₑ Swell", Te_swell, "s", "#A855F7")}{statBox("Wave λ", waveLength, "m", "#22D3EE")}{statBox("Rel. Heading", relHeading, "°")}{statBox("Wave Speed", wavePeriod > 0 ? (G * wavePeriod / (2 * Math.PI)) : 0, "m/s", "#10B981")}</div></>)}
+              {panel(<>
+                {sectionHeader("⚓ Seakeeping Assessment")}
+                <div style={{ display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:10, padding:"6px 10px", borderRadius:5, border:`1px solid ${motionStatus.color}`, background: motionStatus.color + "18" }}>
+                  <span style={{ color: motionStatus.color, fontWeight:800, fontSize:13, fontFamily:"'JetBrains Mono', monospace", letterSpacing:"0.12em" }}>
+                    {!isFinite(costFactor) ? "🚫" : costFactor >= 2 ? "⚠" : costFactor > 1 ? "⚡" : "✓"} {motionStatus.label}
+                  </span>
+                  <span style={{ color:"#94A3B8", fontSize:10 }}>cost×{isFinite(costFactor) ? costFactor.toFixed(2) : "∞"}</span>
+                </div>
+                <div style={{ display:"grid", gridTemplateColumns:"1fr 1fr 1fr", gap:2 }}>
+                  {statBox("Roll Amp", motions ? motions.roll.toFixed(1) : "—", "°",
+                    motions && motions.roll >= SafetyLimits.maxRollDangerous ? "#DC2626"
+                    : motions && motions.roll >= SafetyLimits.maxRollSafe ? "#D97706" : "#22D3EE")}
+                  {statBox("Pitch Amp", motions ? motions.pitch.toFixed(1) : "—", "°",
+                    motions && motions.pitch >= SafetyLimits.maxPitchDangerous ? "#DC2626"
+                    : motions && motions.pitch >= SafetyLimits.maxPitchSafe ? "#D97706" : "#22D3EE")}
+                  {statBox("Bridge Acc", motions ? motions.bridgeAcc.toFixed(2) : "—", "m/s²",
+                    motions && motions.bridgeAcc >= SafetyLimits.maxAccelDangerous ? "#DC2626"
+                    : motions && motions.bridgeAcc >= SafetyLimits.maxAccelSafe ? "#D97706" : "#10B981")}
+                  {statBox("Slam Prob", motions ? (motions.slam * 100).toFixed(1) : "—", "%",
+                    motions && motions.slam >= SafetyLimits.maxSlamMarginal ? "#DC2626"
+                    : motions && motions.slam >= SafetyLimits.maxSlamSafe ? "#D97706" : "#10B981")}
+                  {statBox("Green Water", motions ? (motions.greenWater * 100).toFixed(1) : "—", "%",
+                    motions && motions.greenWater > 0.10 ? "#EA580C" : "#10B981")}
+                  {statBox("Speed Loss", speedLossPct.toFixed(1), "%", speedLossPct > 15 ? "#EA580C" : "#94A3B8")}
+                </div>
+                <div style={{ marginTop:10, padding:"6px 8px", background:"#0F172A", borderRadius:4, border:"1px solid #334155" }}>
+                  <div style={{ display:"flex", justifyContent:"space-between", alignItems:"center", marginBottom:4 }}>
+                    <span style={{ color:"#94A3B8", fontSize:9, textTransform:"uppercase", letterSpacing:"0.12em" }}>Parametric Risk (3-factor)</span>
+                    <span style={{ color: paramRisk3factor > 0.7 ? "#DC2626" : paramRisk3factor > 0.4 ? "#D97706" : "#16A34A", fontWeight:800, fontSize:12, fontFamily:"'JetBrains Mono', monospace" }}>
+                      {(paramRisk3factor * 100).toFixed(0)}%
+                    </span>
+                  </div>
+                  <div style={{ background:"#1E293B", borderRadius:3, height:6 }}>
+                    <div style={{ height:6, borderRadius:3, width: `${Math.min(paramRisk3factor*100,100)}%`,
+                      background: paramRisk3factor > 0.7 ? "#DC2626" : paramRisk3factor > 0.4 ? "#D97706" : "#16A34A",
+                      transition:"width 0.4s ease" }} />
+                  </div>
+                  <div style={{ color:"#475569", fontSize:9, marginTop:3 }}>Period × Length × Heading resonance factors (windmar model)</div>
+                </div>
+              </>)}
             </div>
             <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
               {panel(<>{sectionHeader("Directional Overview")}<div style={{ display: "flex", justifyContent: "center" }}><CompassRose waveDir={waveDir} swellDir={swellDir} shipHeading={heading} /></div></>)}
