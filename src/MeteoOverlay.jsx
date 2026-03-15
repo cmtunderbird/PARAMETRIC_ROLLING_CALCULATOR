@@ -144,9 +144,9 @@ function renderMeteoImage(gridData, mode, shipParams) {
 
   // Fill null cells (land/missing) with nearest-neighbor so gradient
   // extends smoothly over land areas — no choppy edges
-  let changed = true;
-  while (changed) {
-    changed = false;
+  const MAX_FILL_PASSES = 4; // cap iterations to avoid freezing on large land masses
+  for (let pass = 0; pass < MAX_FILL_PASSES; pass++) {
+    let changed = false;
     for (let r = 0; r < rows; r++) {
       for (let c = 0; c < cols; c++) {
         if (grid[r][c] != null) continue;
@@ -163,6 +163,7 @@ function renderMeteoImage(gridData, mode, shipParams) {
         if (cnt > 0) { grid[r][c] = sum / cnt; changed = true; }
       }
     }
+    if (!changed) break; // all cells filled early, no need for more passes
   }
 
   let stops, isoLevels;
