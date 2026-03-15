@@ -1,488 +1,556 @@
+// ─── RouteChart.jsx ───────────────────────────────────────────────────────────
+// Route chart with:
+//   • BOSP / EOSP departure & arrival time entry
+//   • ETA calculation at every waypoint
+//   • Time-aware weather: picks the forecast hour matching each waypoint's ETA
+//   • Full seakeeping risk assessment (calcMotions) at every waypoint
+//   • Route segments colour-coded by parametric rolling risk
+//   • Synoptic chart overlay: wave gradient + isobars + WMO wind barbs
+//   • 7-day forecast scrubber for the chart overlay
 import { useState, useEffect, useRef, useCallback } from "react";
-import { MapContainer, TileLayer, Polyline, Marker, Popup, Tooltip, Circle, useMap } from "react-leaflet";
+import { MapContainer, TileLayer, Polyline, Marker, Popup, Tooltip, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
-import { autoDetectAndParse, computeRouteStats, generateWeatherSamplePoints, generateSampleRTZ, haversineNM, bearing } from "./RouteParser.js";
+import { autoDetectAndParse, computeRouteStats, generateWeatherSamplePoints,
+         generateSampleRTZ } from "./RouteParser.js";
 import MeteoCanvasOverlay, { getColorLegend } from "./MeteoOverlay.jsx";
-import { calcEncounterPeriod, calcParametricRiskRatio, getRiskSeverity, getRiskLabel } from "./physics.js";
+import { buildGridPoints, fetchMarineGrid, fetchAtmosphericGrid,
+         closestHourIdx, snapshotAt, calcVoyageETAs } from "./weatherApi.js";
+import { calcMotions, getSafetyCostFactor, getMotionStatus,
+         getRiskLevel, calcParametricRiskRatio, calcEncounterPeriod } from "./physics.js";
 
-// ─── Leaflet icon fix (webpack/vite strips default icons) ─────────────────────
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
-  iconUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
-  iconRetinaUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
+  iconUrl:"https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon.png",
+  iconRetinaUrl:"https://unpkg.com/leaflet@1.9.4/dist/images/marker-icon-2x.png",
+  shadowUrl:"https://unpkg.com/leaflet@1.9.4/dist/images/marker-shadow.png",
 });
 
-const wpIcon = (color, label) => L.divIcon({
-  className: "",
-  iconSize: [24, 24],
-  iconAnchor: [12, 12],
-  html: `<div style="width:24px;height:24px;border-radius:50%;background:${color};border:2px solid #fff;display:flex;align-items:center;justify-content:center;font-size:9px;font-weight:800;color:#fff;font-family:'JetBrains Mono',monospace;box-shadow:0 2px 6px rgba(0,0,0,0.4)">${label}</div>`,
-});
+const riskColor = s => ["#0D9488","#16A34A","#CA8A04","#D97706","#EA580C","#DC2626","#7C3AED"][Math.min(s,6)]||"#64748B";
+const panelBg="#1E293B";
+const inputSt={background:"#0F172A",border:"1px solid #334155",borderRadius:4,color:"#E2E8F0",
+  padding:"6px 8px",fontSize:12,fontFamily:"'JetBrains Mono',monospace",width:"100%",boxSizing:"border-box",outline:"none"};
+const btnSt={padding:"8px 16px",border:"none",borderRadius:4,fontWeight:800,fontSize:11,
+  fontFamily:"'JetBrains Mono',monospace",cursor:"pointer",letterSpacing:"0.08em",transition:"all 0.2s"};
+const lblSt={color:"#94A3B8",fontSize:10,fontWeight:600,textTransform:"uppercase",
+  letterSpacing:"0.1em",marginBottom:3,display:"block",fontFamily:"'JetBrains Mono',monospace"};
+const SH = t => <div style={{color:"#F59E0B",fontSize:11,fontWeight:700,letterSpacing:"0.15em",
+  textTransform:"uppercase",borderBottom:"1px solid #1E293B",paddingBottom:6,marginBottom:10,
+  fontFamily:"'JetBrains Mono',monospace"}}>{t}</div>;
+const Panel = ({children,style={}}) => <div style={{background:panelBg,borderRadius:8,
+  padding:16,border:"1px solid #334155",...style}}>{children}</div>;
 
-const riskColor = (severity) => ["#0D9488","#16A34A","#CA8A04","#D97706","#EA580C","#DC2626"][severity] || "#64748B";
-
-// ─── Fit map bounds to route ──────────────────────────────────────────────────
-function FitBounds({ waypoints }) {
-  const map = useMap();
-  useEffect(() => {
-    if (waypoints.length > 0) {
-      const bounds = L.latLngBounds(waypoints.map(w => [w.lat, w.lon]));
-      map.fitBounds(bounds, { padding: [40, 40] });
+function FitBounds({waypoints}){
+  const map=useMap();
+  useEffect(()=>{
+    if(waypoints.length>0){
+      const b=L.latLngBounds(waypoints.map(w=>[w.lat,w.lon]));
+      map.fitBounds(b,{padding:[40,40]});
     }
-  }, [waypoints, map]);
+  },[waypoints,map]);
   return null;
 }
+function CaptureMap({mapRef}){const map=useMap();useEffect(()=>{mapRef.current=map;},[map,mapRef]);return null;}
 
-function CaptureMap({ mapRef }) {
-  const map = useMap();
-  useEffect(() => { mapRef.current = map; }, [map, mapRef]);
-  return null;
+// ─── Custom BOSP/EOSP marker icons ────────────────────────────────────────────
+const makeWpIcon = (color, label, size=28) => L.divIcon({
+  className:"", iconSize:[size,size], iconAnchor:[size/2,size/2],
+  html:`<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};
+    border:2.5px solid #fff;display:flex;align-items:center;justify-content:center;
+    font-size:${size<26?8:10}px;font-weight:900;color:#fff;
+    font-family:'JetBrains Mono',monospace;box-shadow:0 2px 8px rgba(0,0,0,0.5)">${label}</div>`,
+});
+const bospIcon = makeWpIcon("#16A34A","▶",32);
+const eospIcon = makeWpIcon("#DC2626","■",32);
+const riskIcon = (severity, label) => makeWpIcon(riskColor(severity), label, 22);
+
+// ─── Waypoint popup ──────────────────────────────────────────────────────────
+function WpPopup({ wp, shipParams }) {
+  const w = wp.weather;
+  return (
+    <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:11,minWidth:200}}>
+      <div style={{fontWeight:800,color:"#F59E0B",marginBottom:6,fontSize:13}}>{wp.name||`WP ${wp.id}`}</div>
+      {wp.etaMs && <div style={{color:"#22D3EE",marginBottom:4}}>
+        ETA: {new Date(wp.etaMs).toUTCString().slice(0,25)} UTC
+      </div>}
+      {wp.cumNM!=null && <div style={{color:"#94A3B8",marginBottom:6}}>Dist from BOSP: {wp.cumNM.toFixed(1)} NM</div>}
+      {w ? <>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
+          <div><span style={{color:"#64748B"}}>Hs:</span> <b style={{color:"#3B82F6"}}>{w.waveHeight?.toFixed(1)||"—"}m</b></div>
+          <div><span style={{color:"#64748B"}}>Tw:</span> <b style={{color:"#3B82F6"}}>{w.wavePeriod?.toFixed(1)||"—"}s</b></div>
+          <div><span style={{color:"#64748B"}}>Swell:</span> <b style={{color:"#F59E0B"}}>{w.swellHeight?.toFixed(1)||"—"}m/{w.swellPeriod?.toFixed(0)||"—"}s</b></div>
+          <div><span style={{color:"#64748B"}}>WDir:</span> <b>{w.waveDir?.toFixed(0)||"—"}°T</b></div>
+          {w.windKts!=null && <>
+            <div><span style={{color:"#64748B"}}>Wind:</span> <b style={{color:"#22D3EE"}}>{w.windKts?.toFixed(0)} kts</b></div>
+            <div><span style={{color:"#64748B"}}>From:</span> <b>{w.windDir?.toFixed(0)||"—"}°T</b></div>
+          </>}
+          {w.mslp!=null && <div style={{gridColumn:"1/-1"}}><span style={{color:"#64748B"}}>MSLP:</span> <b style={{color:"#A855F7"}}>{w.mslp?.toFixed(0)} hPa</b></div>}
+        </div>
+        {wp.motions && <>
+          <div style={{marginTop:6,borderTop:"1px solid #334155",paddingTop:6}}>
+            <div style={{color:wp.motionStatus?.color||"#94A3B8",fontWeight:800}}>{wp.motionStatus?.label||"—"}</div>
+            <div>Roll: {wp.motions.roll?.toFixed(1)||"—"}° | Pitch: {wp.motions.pitch?.toFixed(1)||"—"}°</div>
+            <div>Bridge: {wp.motions.bridgeAcc?.toFixed(2)||"—"} m/s² | Slam: {(wp.motions.slam*100).toFixed(0)||"—"}%</div>
+            <div style={{color:"#94A3B8"}}>Param Risk: {(wp.motions.paramRisk*100).toFixed(0)||"—"}%</div>
+          </div>
+        </>}
+      </> : <div style={{color:"#64748B",fontSize:10}}>No weather data — fetch voyage weather first</div>}
+    </div>
+  );
 }
 
-
-// ─── Shared utility ──────────────────────────────────────────────────────────
-const delay = (ms) => new Promise(r => setTimeout(r, ms));
-
-async function fetchGridWeather(bounds, gridRes = 2.0) {
-  const south = Math.floor(bounds.south / gridRes) * gridRes;
-  const north = Math.ceil(bounds.north / gridRes) * gridRes;
-  const west = Math.floor(bounds.west / gridRes) * gridRes;
-  const east = Math.ceil(bounds.east / gridRes) * gridRes;
-  const lats = [], lons = [];
-  for (let la = south; la <= north; la += gridRes) lats.push(parseFloat(la.toFixed(2)));
-  for (let lo = west; lo <= east; lo += gridRes) lons.push(parseFloat(lo.toFixed(2)));
-  if (lats.length * lons.length > 2500) throw new Error(`Grid too large (${lats.length}x${lons.length}=${lats.length*lons.length}). Zoom in or increase resolution.`);
-  const points = [];
-  for (const la of lats) for (const lo of lons) points.push({ lat: la, lon: lo });
-  // Open-Meteo allows comma-separated lat/lon for multi-point (max ~50 per request)
-  const batchSize = 40;
-  const results = [];
-  for (let i = 0; i < points.length; i += batchSize) {
-    if (i > 0) await delay(300); // pace requests to avoid HTTP 429
-    const batch = points.slice(i, i + batchSize);
-    const latStr = batch.map(p => p.lat).join(",");
-    const lonStr = batch.map(p => p.lon).join(",");
-    const url = `https://marine-api.open-meteo.com/v1/marine?latitude=${latStr}&longitude=${lonStr}&hourly=wave_height,wave_direction,wave_period,swell_wave_height,swell_wave_period,swell_wave_direction&forecast_days=1&timeformat=unixtime`;
-    try {
-      const resp = await fetch(url);
-      if (!resp.ok) { batch.forEach(p => results.push({ ...p, weather: null, error: `HTTP ${resp.status}` })); continue; }
-      const data = await resp.json();
-      // Multi-point returns array; single returns object
-      const arr = Array.isArray(data) ? data : [data];
-      arr.forEach((d, j) => {
-        if (d.error) { results.push({ ...batch[j], weather: null }); return; }
-        const h = d.hourly;
-        const now = Date.now();
-        const idx = h.time.reduce((best, t, k) => Math.abs(t * 1000 - now) < Math.abs(h.time[best] * 1000 - now) ? k : best, 0);
-        results.push({
-          ...batch[j],
-          weather: {
-            waveHeight: h.wave_height?.[idx], wavePeriod: h.wave_period?.[idx], waveDir: h.wave_direction?.[idx],
-            swellHeight: h.swell_wave_height?.[idx], swellPeriod: h.swell_wave_period?.[idx], swellDir: h.swell_wave_direction?.[idx],
-          }
-        });
-      });
-    } catch (e) { batch.forEach(p => results.push({ ...p, weather: null })); }
-  }
-  return { results, gridRes, bounds: { south, north, west, east } };
-}
-
-// ─── Weather along route fetcher (batched to avoid rate limits) ───────────────
-
-async function fetchWeatherAlongRoute(samplePoints) {
-  const results = [];
-  const batchSize = 40;
-  for (let i = 0; i < samplePoints.length; i += batchSize) {
-    if (i > 0) await delay(300);
-    const batch = samplePoints.slice(i, i + batchSize);
-    const latStr = batch.map(p => p.lat.toFixed(2)).join(",");
-    const lonStr = batch.map(p => p.lon.toFixed(2)).join(",");
-    const url = `https://marine-api.open-meteo.com/v1/marine?latitude=${latStr}&longitude=${lonStr}&hourly=wave_height,wave_direction,wave_period,swell_wave_height,swell_wave_period,swell_wave_direction&forecast_days=1&timeformat=unixtime`;
-    try {
-      const resp = await fetch(url);
-      if (!resp.ok) { batch.forEach(pt => results.push({ ...pt, weather: null, error: `HTTP ${resp.status}` })); continue; }
-      const data = await resp.json();
-      const arr = Array.isArray(data) ? data : [data];
-      arr.forEach((d, j) => {
-        if (d.error || !d.hourly) { results.push({ ...batch[j], weather: null, error: d.reason || "No data" }); return; }
-        const h = d.hourly;
-        const now = Date.now();
-        const idx = h.time.reduce((best, t, k) => Math.abs(t*1000-now) < Math.abs(h.time[best]*1000-now) ? k : best, 0);
-        results.push({
-          ...batch[j],
-          weather: { waveHeight: h.wave_height?.[idx], waveDir: h.wave_direction?.[idx], wavePeriod: h.wave_period?.[idx],
-            swellHeight: h.swell_wave_height?.[idx], swellPeriod: h.swell_wave_period?.[idx], swellDir: h.swell_wave_direction?.[idx] },
-          error: null,
-        });
-      });
-    } catch (e) { batch.forEach(pt => results.push({ ...pt, weather: null, error: e.message })); }
-  }
-  return results;
-}
-// ─── Styles ───────────────────────────────────────────────────────────────────
-const panelBg = "#1E293B";
-const inputStyle = { background: "#0F172A", border: "1px solid #334155", borderRadius: 4, color: "#E2E8F0", padding: "6px 8px", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", width: "100%", boxSizing: "border-box", outline: "none" };
-const btnStyle = { padding: "8px 16px", border: "none", borderRadius: 4, fontWeight: 800, fontSize: 11, fontFamily: "'JetBrains Mono', monospace", cursor: "pointer", letterSpacing: "0.08em", transition: "all 0.2s" };
-const labelStyle = { color: "#94A3B8", fontSize: 10, fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 3, display: "block", fontFamily: "'JetBrains Mono', monospace" };
-const sectionHeader = (text) => (<div style={{ color: "#F59E0B", fontSize: 11, fontWeight: 700, letterSpacing: "0.15em", textTransform: "uppercase", borderBottom: "1px solid #1E293B", paddingBottom: 6, marginBottom: 10, fontFamily: "'JetBrains Mono', monospace" }}>{text}</div>);
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// MAIN ROUTE CHART COMPONENT
-// ═══════════════════════════════════════════════════════════════════════════════
+// ═══ Main component ═══════════════════════════════════════════════════════════
 export default function RouteChart({ shipParams }) {
-  const [route, setRoute] = useState(null);
+  const [route, setRoute]           = useState(null);
   const [routeStats, setRouteStats] = useState(null);
   const [parseError, setParseError] = useState(null);
-  const [fileName, setFileName] = useState(null);
-  const [weatherData, setWeatherData] = useState(null);
-  const [weatherLoading, setWeatherLoading] = useState(false);
-  const [weatherError, setWeatherError] = useState(null);
-  const [showWeatherOverlay, setShowWeatherOverlay] = useState(true);
-  const [sampleInterval, setSampleInterval] = useState(100);
-  const [seaGrid, setSeaGrid] = useState(null);
-  const [seaGridLoading, setSeaGridLoading] = useState(false);
-  const [seaGridError, setSeaGridError] = useState(null);
-  const [seaGridMode, setSeaGridMode] = useState("waveHeight");
-  const [seaGridRes, setSeaGridRes] = useState(2.0);
-  const [showSeaGrid, setShowSeaGrid] = useState(true);
-  const mapRef = useRef(null);
-  const fileInputRef = useRef(null);
-  const anyFetching = weatherLoading || seaGridLoading; // rate limit coordination
+  const [fileName, setFileName]     = useState(null);
 
-  // Compute stats when route changes
-  useEffect(() => {
-    if (route?.waypoints) {
-      setRouteStats(computeRouteStats(route.waypoints));
-      setWeatherData(null);
-    }
-  }, [route]);
+  // ── BOSP / EOSP ──
+  const nowLocal = () => { const d=new Date(); d.setSeconds(0,0); return d.toISOString().slice(0,16); };
+  const [bospDT, setBospDT]   = useState(nowLocal);   // datetime-local string
+  const [voyageSpeed, setVoyageSpeed] = useState(shipParams?.speed||15);
+  const [voyageWPs, setVoyageWPs]     = useState(null); // waypoints with ETA
 
-  // ─── File handling ────────────────────────────────────────────────────────
-  const handleFile = useCallback((file) => {
-    setParseError(null);
-    setFileName(file.name);
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      try {
-        const parsed = autoDetectAndParse(e.target.result, file.name);
-        setRoute(parsed);
-      } catch (err) {
-        setParseError(err.message);
-        setRoute(null);
-      }
-    };
-    reader.readAsText(file);
-  }, []);
+  // ── Voyage weather (time-aware) ──
+  const [voyageWeather, setVoyageWeather] = useState(null);
+  const [vwLoading, setVwLoading]         = useState(false);
+  const [vwError, setVwError]             = useState(null);
 
-  const handleDrop = useCallback((e) => {
-    e.preventDefault();
-    const file = e.dataTransfer?.files?.[0];
-    if (file) handleFile(file);
-  }, [handleFile]);
+  // ── Sea chart overlay ──
+  const [marineGrid, setMarineGrid] = useState(null);
+  const [atmoGrid,   setAtmoGrid]   = useState(null);
+  const [gridRes,    setGridRes]    = useState(2.0);
+  const [gridMode,   setGridMode]   = useState("waveHeight");
+  const [showGrid,   setShowGrid]   = useState(true);
+  const [showAtmo,   setShowAtmo]   = useState(true);
+  const [gridLoading,setGridLoading]= useState(false);
+  const [gridError,  setGridError]  = useState(null);
+  const [chartHourIdx, setChartHourIdx] = useState(0); // forecast scrubber
 
-  const loadDemoRoute = () => {
-    try {
-      const parsed = autoDetectAndParse(generateSampleRTZ(), "demo.rtz");
-      setRoute(parsed);
-      setFileName("North_Atlantic_Westbound_Demo.rtz");
-      setParseError(null);
-    } catch (err) { setParseError(err.message); }
-  };
+  const mapRef     = useRef(null);
+  const fileRef    = useRef(null);
+  const anyLoading = vwLoading||gridLoading;
 
-  // ─── Weather fetch along route ────────────────────────────────────────────
-  const fetchRouteWeather = async () => {
+  useEffect(()=>{
+    if(route?.waypoints){ setRouteStats(computeRouteStats(route.waypoints)); setVoyageWPs(null); setVoyageWeather(null); }
+  },[route]);
+
+  // ── File handling ──
+  const handleFile = useCallback(file=>{
+    setParseError(null); setFileName(file.name);
+    const r=new FileReader();
+    r.onload=e=>{ try{ setRoute(autoDetectAndParse(e.target.result,file.name)); } catch(err){ setParseError(err.message); setRoute(null); } };
+    r.readAsText(file);
+  },[]);
+
+  const loadDemo = ()=>{ try{ setRoute(autoDetectAndParse(generateSampleRTZ(),"demo.rtz")); setFileName("N.Atlantic_Demo.rtz"); } catch(e){ setParseError(e.message); } };
+
+  // ── Step 1: Calculate voyage ETAs ──
+  const calcVoyage = () => {
     if (!route?.waypoints) return;
-    setWeatherLoading(true);
-    setWeatherError(null);
-    try {
-      const samplePoints = generateWeatherSamplePoints(route.waypoints, sampleInterval);
-      const data = await fetchWeatherAlongRoute(samplePoints);
-      setWeatherData(data);
-    } catch (err) {
-      setWeatherError(err.message);
-    }
-    setWeatherLoading(false);
+    const bospMs = new Date(bospDT).getTime();
+    const wps = calcVoyageETAs(route.waypoints, bospMs, voyageSpeed);
+    setVoyageWPs(wps);
+    setVoyageWeather(null);
   };
 
-  // ─── Sea area grid weather fetch ──────────────────────────────────────────
-  const fetchSeaGridWeather = async () => {
-    const map = mapRef.current;
-    if (!map) return;
-    setSeaGridLoading(true);
-    setSeaGridError(null);
+  // ── Step 2: Fetch weather matched to each waypoint's ETA ──
+  const fetchVoyageWeather = async () => {
+    if (!voyageWPs?.length) return;
+    setVwLoading(true); setVwError(null);
+    try {
+      // Sample points along route (every N NM)
+      const pts = generateWeatherSamplePoints(route.waypoints, 150);
+      // ETA-match: for sampled point i, linearly interpolate ETA from waypoints
+      const totalNM = voyageWPs[voyageWPs.length-1].cumNM||1;
+      const bospMs  = new Date(bospDT).getTime();
+      const eospMs  = bospMs + (totalNM/voyageSpeed)*3600000;
+
+      // For each sample point, estimate ETA proportionally by cumulative distance
+      let cumDists = [0];
+      for (let i=1;i<pts.length;i++){
+        const pr=pts[i-1],cu=pts[i];
+        const dLat=(cu.lat-pr.lat)*Math.PI/180, dLon=(cu.lon-pr.lon)*Math.PI/180;
+        const a=Math.sin(dLat/2)**2+Math.cos(pr.lat*Math.PI/180)*Math.cos(cu.lat*Math.PI/180)*Math.sin(dLon/2)**2;
+        cumDists.push(cumDists[i-1]+3440.065*2*Math.asin(Math.sqrt(a)));
+      }
+      const totalPtNM = cumDists[cumDists.length-1]||1;
+      const ptsWithETA = pts.map((p,i)=>({ ...p, etaMs: bospMs+(cumDists[i]/totalPtNM)*(eospMs-bospMs) }));
+
+      // Fetch 7-day marine + atmospheric forecasts for all points (batched)
+      const { buildGridPoints:_b, fetchMarineGrid:fmg, fetchAtmosphericGrid:fag, closestHourIdx:chi, snapshotAt:sa } = { buildGridPoints, fetchMarineGrid, fetchAtmosphericGrid, closestHourIdx, snapshotAt };
+
+      // Deduplicate nearby points to ~1° for fetch efficiency
+      const uniq=[], seen=new Set();
+      for (const p of ptsWithETA){ const k=`${p.lat.toFixed(1)},${p.lon.toFixed(1)}`; if(!seen.has(k)){seen.add(k);uniq.push(p);} }
+
+      const [marineRaw, atmoRaw] = await Promise.all([fmg(uniq,7), fag(uniq,7)]);
+      const marineMap = new Map(marineRaw.map(r=>[`${r.lat.toFixed(1)},${r.lon.toFixed(1)}`,r]));
+      const atmoMap   = new Map(atmoRaw.map(r=>[`${r.lat.toFixed(1)},${r.lon.toFixed(1)}`,r]));
+
+      const results = ptsWithETA.map(p=>{
+        const key=`${p.lat.toFixed(1)},${p.lon.toFixed(1)}`;
+        const mr=marineMap.get(key); const ar=atmoMap.get(key);
+        const mIdx = mr ? chi(mr.times, p.etaMs) : 0;
+        const aIdx = ar ? chi(ar.times, p.etaMs) : 0;
+        const weather = mr ? {
+          waveHeight:mr.waveHeight?.[mIdx], waveDir:mr.waveDir?.[mIdx], wavePeriod:mr.wavePeriod?.[mIdx],
+          swellHeight:mr.swellHeight?.[mIdx], swellPeriod:mr.swellPeriod?.[mIdx], swellDir:mr.swellDir?.[mIdx],
+          windKts:ar?.windKts?.[aIdx], windDir:ar?.windDir?.[aIdx], mslp:ar?.mslp?.[aIdx],
+        } : null;
+        const motions = weather ? calcMotions({
+          waveHeight_m:weather.waveHeight||0, wavePeriod_s:weather.wavePeriod||8, waveDir_deg:weather.waveDir||p.heading||0,
+          swellHeight_m:weather.swellHeight||0, swellPeriod_s:weather.swellPeriod||10, swellDir_deg:weather.swellDir||0,
+          heading_deg:p.heading||0, speed_kts:voyageSpeed,
+          Lwl:shipParams?.Lwl||200, B:shipParams?.B||32, GM:shipParams?.GM||2.5, Tr:shipParams?.Tr||14,
+        }) : null;
+        const motionStatus = motions ? getMotionStatus(motions,weather?.waveHeight||0,weather?.windKts||0) : null;
+        const riskSeverity = motionStatus?.severity ?? 0;
+        return { ...p, weather, motions, motionStatus, riskSeverity };
+      });
+      setVoyageWeather(results);
+    } catch(e){ setVwError(e.message); }
+    setVwLoading(false);
+  };
+
+  // ── Sea chart synoptic overlay ──
+  const fetchSeaOverlay = async () => {
+    const map = mapRef.current; if (!map) return;
+    setGridLoading(true); setGridError(null);
     try {
       const b = map.getBounds();
-      const bounds = { south: b.getSouth(), north: b.getNorth(), west: b.getWest(), east: b.getEast() };
-      const data = await fetchGridWeather(bounds, seaGridRes);
-      setSeaGrid(data);
-    } catch (err) {
-      setSeaGridError(err.message);
-    }
-    setSeaGridLoading(false);
+      const bounds = { south:b.getSouth(), north:b.getNorth(), west:b.getWest(), east:b.getEast() };
+      const { points, bounds:gb } = buildGridPoints(bounds, gridRes);
+      if (points.length > 3000) throw new Error(`Grid too large (${points.length} pts). Zoom in or use coarser resolution.`);
+      const [mGrid, aGrid] = await Promise.all([
+        fetchMarineGrid(points, 7),
+        showAtmo ? fetchAtmosphericGrid(points, 7) : Promise.resolve([]),
+      ]);
+      setMarineGrid({ results:mGrid, gridRes, bounds:gb });
+      setAtmoGrid(showAtmo ? { results:aGrid, gridRes, bounds:gb } : null);
+      setChartHourIdx(0);
+    } catch(e){ setGridError(e.message); }
+    setGridLoading(false);
   };
 
-  // Compute risk for each weather point
-  const weatherWithRisk = weatherData?.map(pt => {
-    if (!pt.weather || !shipParams?.Tr) return { ...pt, risk: 0, ratio: null };
-    const Tr = shipParams.Tr;
-    const speed = shipParams.speed || 15;
-    const relHdg = pt.weather.waveDir != null ? ((pt.weather.waveDir - (shipParams.heading || 0) + 360) % 360) : 0;
-    const Te = calcEncounterPeriod(pt.weather.wavePeriod || 0, speed, relHdg);
-    const ratio = calcParametricRiskRatio(Tr, Te);
-    const risk = getRiskSeverity(ratio);
-    return { ...pt, risk, ratio };
-  }) || [];
+  // ── Total forecast hours available ──
+  const maxHourIdx = marineGrid?.results?.find(r=>r.times)?.times?.length ?? 168;
 
-  // ─── Render ───────────────────────────────────────────────────────────────
+  // ── Computed voyage summary ──
+  const eosp = voyageWPs?.[voyageWPs.length-1];
+  const eospStr = eosp ? new Date(eosp.etaMs).toUTCString().slice(0,25)+' UTC' : '—';
+  const voyageDaysStr = eosp ? ((eosp.etaMs - new Date(bospDT).getTime())/86400000).toFixed(1) : '—';
+
+  // Max risk along voyage for header badge
+  const maxRisk = voyageWeather ? Math.max(...voyageWeather.map(p=>p.riskSeverity)) : 0;
+
+  // ─── Render ──────────────────────────────────────────────────────────────────
   return (
-    <div style={{ display: "grid", gridTemplateColumns: "300px 1fr", gap: 16, minHeight: 600 }}>
-      {/* ── LEFT PANEL: Route Import & Info ── */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        {/* File Import */}
-        <div style={{ background: panelBg, borderRadius: 8, padding: 16, border: "1px solid #334155" }}>
-          {sectionHeader("Route Import")}
-          <div style={{ color: "#94A3B8", fontSize: 10, marginBottom: 8, lineHeight: 1.5 }}>
-            Drop or select route file exported from ECDIS:<br/>
-            <span style={{ color: "#F59E0B" }}>RTZ</span> (Furuno, JRC, Transas, Raytheon) · <span style={{ color: "#F59E0B" }}>CSV</span> · <span style={{ color: "#F59E0B" }}>GeoJSON</span>
-          </div>
-          <div onDrop={handleDrop} onDragOver={(e) => e.preventDefault()} onClick={() => fileInputRef.current?.click()}
-            style={{ border: "2px dashed #334155", borderRadius: 6, padding: 20, textAlign: "center", cursor: "pointer", background: "#0F172A", transition: "border-color 0.2s" }}
-            onDragEnter={(e) => { e.preventDefault(); e.currentTarget.style.borderColor = "#F59E0B"; }}
-            onDragLeave={(e) => { e.currentTarget.style.borderColor = "#334155"; }}>
-            <div style={{ fontSize: 24, marginBottom: 4 }}>📂</div>
-            <div style={{ color: "#94A3B8", fontSize: 11 }}>{fileName || "Drop .rtz / .csv / .geojson here"}</div>
-            <div style={{ color: "#64748B", fontSize: 9, marginTop: 4 }}>or click to browse</div>
-          </div>
-          <input ref={fileInputRef} type="file" accept=".rtz,.csv,.txt,.geojson,.json" style={{ display: "none" }} onChange={(e) => e.target.files?.[0] && handleFile(e.target.files[0])} />
-          <button onClick={loadDemoRoute} style={{ ...btnStyle, width: "100%", marginTop: 8, background: "linear-gradient(90deg, #334155, #475569)", color: "#E2E8F0" }}>
-            ▶ LOAD DEMO: N.Atlantic Westbound
-          </button>
-          {parseError && <div style={{ color: "#EF4444", fontSize: 10, marginTop: 6, padding: 6, background: "#7F1D1D20", borderRadius: 4 }}>{parseError}</div>}
-        </div>
+    <div style={{display:"grid",gridTemplateColumns:"310px 1fr",gap:16,minHeight:650}}>
 
-        {/* Route Info */}
-        {route && (
-          <div style={{ background: panelBg, borderRadius: 8, padding: 16, border: "1px solid #334155" }}>
-            {sectionHeader("Route Info")}
-            <div style={{ fontSize: 13, fontWeight: 700, color: "#F8FAFC", marginBottom: 6 }}>{route.name}</div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 6, fontSize: 11 }}>
-              <div><span style={{ color: "#64748B" }}>Format:</span> <span style={{ color: "#22D3EE" }}>{route.format}</span></div>
-              <div><span style={{ color: "#64748B" }}>Version:</span> <span style={{ color: "#22D3EE" }}>{route.version}</span></div>
-              <div><span style={{ color: "#64748B" }}>Waypoints:</span> <span style={{ color: "#F59E0B" }}>{route.waypoints.length}</span></div>
-              <div><span style={{ color: "#64748B" }}>Legs:</span> <span style={{ color: "#F59E0B" }}>{route.totalLegs}</span></div>
-              {routeStats && <>
-                <div style={{ gridColumn: "1/-1" }}><span style={{ color: "#64748B" }}>Total Distance:</span> <span style={{ color: "#3B82F6", fontWeight: 700 }}>{routeStats.totalNM.toFixed(1)} NM</span></div>
-              </>}
+      {/* ═══ LEFT PANEL ═══════════════════════════════════════════════════════ */}
+      <div style={{display:"flex",flexDirection:"column",gap:12,overflowY:"auto",maxHeight:"85vh"}}>
+
+        {/* Route Import */}
+        <Panel>
+          {SH("Route Import")}
+          <div style={{color:"#94A3B8",fontSize:10,marginBottom:8,lineHeight:1.5}}>
+            Drop/select route from ECDIS:<br/>
+            <span style={{color:"#F59E0B"}}>RTZ</span> (Furuno, JRC, Transas) · <span style={{color:"#F59E0B"}}>CSV</span> · <span style={{color:"#F59E0B"}}>GeoJSON</span>
+          </div>
+          <div onDrop={e=>{e.preventDefault();e.dataTransfer?.files?.[0]&&handleFile(e.dataTransfer.files[0]);}}
+            onDragOver={e=>e.preventDefault()} onClick={()=>fileRef.current?.click()}
+            style={{border:"2px dashed #334155",borderRadius:6,padding:20,textAlign:"center",
+              cursor:"pointer",background:"#0F172A"}}
+            onDragEnter={e=>e.currentTarget.style.borderColor="#F59E0B"}
+            onDragLeave={e=>e.currentTarget.style.borderColor="#334155"}>
+            <div style={{fontSize:22,marginBottom:4}}>📂</div>
+            <div style={{color:"#94A3B8",fontSize:11}}>{fileName||"Drop .rtz / .csv / .geojson"}</div>
+            <div style={{color:"#64748B",fontSize:9,marginTop:3}}>or click to browse</div>
+          </div>
+          <input ref={fileRef} type="file" accept=".rtz,.csv,.txt,.geojson,.json" style={{display:"none"}}
+            onChange={e=>e.target.files?.[0]&&handleFile(e.target.files[0])} />
+          <button onClick={loadDemo} style={{...btnSt,width:"100%",marginTop:8,
+            background:"linear-gradient(90deg,#334155,#475569)",color:"#E2E8F0"}}>
+            ▶ DEMO — North Atlantic Westbound
+          </button>
+          {parseError&&<div style={{color:"#EF4444",fontSize:10,marginTop:6,padding:6,background:"#7F1D1D20",borderRadius:4}}>{parseError}</div>}
+        </Panel>
+
+        {/* BOSP / EOSP */}
+        {route && <Panel>
+          {SH("⚓ Voyage Plan — BOSP / EOSP")}
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+            <div style={{gridColumn:"1/-1",padding:"6px 8px",background:"#0F172A",borderRadius:4,border:"1px solid #16A34A50"}}>
+              <div style={{color:"#16A34A",fontSize:9,fontWeight:800,letterSpacing:"0.15em",marginBottom:2}}>▶ BOSP — BEGIN OF SEA PASSAGE</div>
+              <div style={{color:"#CBD5E1",fontSize:10,fontWeight:600}}>{route.waypoints[0]?.name||"WP 01"}</div>
+            </div>
+            <div style={{gridColumn:"1/-1",padding:"6px 8px",background:"#0F172A",borderRadius:4,border:"1px solid #DC262650"}}>
+              <div style={{color:"#DC2626",fontSize:9,fontWeight:800,letterSpacing:"0.15em",marginBottom:2}}>■ EOSP — END OF SEA PASSAGE</div>
+              <div style={{color:"#CBD5E1",fontSize:10,fontWeight:600}}>{route.waypoints[route.waypoints.length-1]?.name||`WP ${String(route.waypoints.length).padStart(2,"0")}`}</div>
             </div>
           </div>
-        )}
+          <label style={lblSt}>BOSP Departure (UTC)</label>
+          <input type="datetime-local" value={bospDT} onChange={e=>setBospDT(e.target.value)} style={{...inputSt,marginBottom:8,colorScheme:"dark"}} />
+          <label style={lblSt}>Vessel Speed (kts)</label>
+          <input type="number" value={voyageSpeed} min={1} max={30} step={0.5} onChange={e=>setVoyageSpeed(parseFloat(e.target.value)||15)} style={{...inputSt,marginBottom:10}} />
+          <button onClick={calcVoyage} style={{...btnSt,width:"100%",background:"linear-gradient(90deg,#3B82F6,#2563EB)",color:"#fff"}}>
+            📍 CALCULATE VOYAGE ETAs
+          </button>
+          {voyageWPs && <div style={{marginTop:8,padding:"6px 8px",background:"#0F172A",borderRadius:4,fontSize:10}}>
+            <div style={{color:"#64748B"}}>Total: <b style={{color:"#3B82F6"}}>{voyageWPs[voyageWPs.length-1]?.cumNM?.toFixed(0)||"—"} NM</b></div>
+            <div style={{color:"#64748B"}}>EOSP: <b style={{color:"#DC2626"}}>{eospStr}</b></div>
+            <div style={{color:"#64748B"}}>Duration: <b style={{color:"#F59E0B"}}>{voyageDaysStr} days</b></div>
+          </div>}
+        </Panel>}
 
-        {/* Weather Fetch */}
-        {route && (
-          <div style={{ background: panelBg, borderRadius: 8, padding: 16, border: "1px solid #334155" }}>
-            {sectionHeader("Route Weather")}
-            <label style={labelStyle}>Sample Interval (NM)</label>
-            <input type="number" value={sampleInterval} min={25} max={500} step={25} onChange={(e) => setSampleInterval(parseInt(e.target.value) || 100)} style={{ ...inputStyle, marginBottom: 8 }} />
-            <button onClick={fetchRouteWeather} disabled={anyFetching} style={{ ...btnStyle, width: "100%", background: anyFetching ? "#334155" : "linear-gradient(90deg, #F59E0B, #D97706)", color: "#0F172A" }}>
-              {weatherLoading ? "FETCHING..." : seaGridLoading ? "WAIT — GRID LOADING..." : `⟳ FETCH WEATHER (${generateWeatherSamplePoints(route.waypoints, sampleInterval).length} pts)`}
-            </button>
-            {weatherError && <div style={{ color: "#EF4444", fontSize: 10, marginTop: 6 }}>{weatherError}</div>}
-            <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, cursor: "pointer" }}>
-              <input type="checkbox" checked={showWeatherOverlay} onChange={(e) => setShowWeatherOverlay(e.target.checked)} style={{ accentColor: "#F59E0B" }} />
-              <span style={{ color: "#94A3B8", fontSize: 11 }}>Show risk overlay on chart</span>
-            </label>
+        {/* Voyage Weather Fetch */}
+        {voyageWPs && <Panel>
+          {SH("🌊 Fetch Voyage Weather")}
+          <div style={{color:"#94A3B8",fontSize:10,lineHeight:1.5,marginBottom:8}}>
+            Fetches 7-day forecasts and picks the correct hour at each waypoint's ETA time.
+            Runs full seakeeping assessment at every sample point.
           </div>
-        )}
+          <button onClick={fetchVoyageWeather} disabled={anyLoading}
+            style={{...btnSt,width:"100%",background:anyLoading?"#334155":"linear-gradient(90deg,#F59E0B,#D97706)",color:"#0F172A"}}>
+            {vwLoading?"FETCHING...":"⟳ FETCH TIME-AWARE WEATHER"}
+          </button>
+          {vwError&&<div style={{color:"#EF4444",fontSize:10,marginTop:6}}>{vwError}</div>}
+          {voyageWeather&&<div style={{color:"#64748B",fontSize:9,marginTop:4}}>
+            {voyageWeather.length} points assessed · Max risk: <span style={{color:riskColor(maxRisk),fontWeight:800}}>{["MIN","LOW","MOD","ELEV","HIGH","CRIT","FORB"][maxRisk]}</span>
+          </div>}
+        </Panel>}
 
-        {/* Sea Area Weather Overlay */}
-        <div style={{ background: panelBg, borderRadius: 8, padding: 16, border: "1px solid #334155" }}>
-          {sectionHeader("Sea Area Weather")}
-          <div style={{ color: "#94A3B8", fontSize: 10, marginBottom: 8, lineHeight: 1.5 }}>
-            Fetch gridded weather for the visible chart area. Pan/zoom to region of interest first.
+        {/* Sea Chart Overlay */}
+        <Panel>
+          {SH("🗺 Synoptic Chart Overlay")}
+          <div style={{color:"#94A3B8",fontSize:10,lineHeight:1.5,marginBottom:8}}>
+            Wave gradient · Isobars (4 hPa) · WMO Wind Barbs<br/>
+            Pan/zoom to area of interest first.
           </div>
-          <label style={labelStyle}>Grid Resolution (°)</label>
-          <select value={seaGridRes} onChange={(e) => setSeaGridRes(parseFloat(e.target.value))} style={{ ...inputStyle, marginBottom: 8, cursor: "pointer" }}>
-            <option value={1.0}>1.0° (fine — slow)</option>
-            <option value={2.0}>2.0° (standard)</option>
-            <option value={3.0}>3.0° (coarse — fast)</option>
-            <option value={5.0}>5.0° (overview)</option>
+          <label style={lblSt}>Grid Resolution (°)</label>
+          <select value={gridRes} onChange={e=>setGridRes(parseFloat(e.target.value))} style={{...inputSt,marginBottom:8,cursor:"pointer"}}>
+            <option value={1.0}>1.0° — fine (slower)</option>
+            <option value={2.0}>2.0° — standard</option>
+            <option value={3.0}>3.0° — coarse (fast)</option>
+            <option value={5.0}>5.0° — overview</option>
           </select>
-          <label style={labelStyle}>Overlay Mode</label>
-          <select value={seaGridMode} onChange={(e) => setSeaGridMode(e.target.value)} style={{ ...inputStyle, marginBottom: 8, cursor: "pointer" }}>
+          <label style={lblSt}>Overlay Layer</label>
+          <select value={gridMode} onChange={e=>setGridMode(e.target.value)} style={{...inputSt,marginBottom:8,cursor:"pointer"}}>
             <option value="waveHeight">Wave Height (Hs)</option>
             <option value="wavePeriod">Wave Period (Tw)</option>
             <option value="risk">Parametric Roll Risk</option>
           </select>
-          <button onClick={fetchSeaGridWeather} disabled={anyFetching} style={{ ...btnStyle, width: "100%", background: anyFetching ? "#334155" : "linear-gradient(90deg, #22D3EE, #3B82F6)", color: "#0F172A" }}>
-            {seaGridLoading ? "FETCHING GRID..." : weatherLoading ? "WAIT — ROUTE LOADING..." : "🌊 FETCH SEA WEATHER"}
+          <label style={{display:"flex",alignItems:"center",gap:6,marginBottom:8,cursor:"pointer"}}>
+            <input type="checkbox" checked={showAtmo} onChange={e=>setShowAtmo(e.target.checked)} style={{accentColor:"#F59E0B"}}/>
+            <span style={{color:"#94A3B8",fontSize:11}}>Isobars + Wind Barbs (atmospheric)</span>
+          </label>
+          <button onClick={fetchSeaOverlay} disabled={anyLoading}
+            style={{...btnSt,width:"100%",background:anyLoading?"#334155":"linear-gradient(90deg,#22D3EE,#3B82F6)",color:"#0F172A"}}>
+            {gridLoading?"FETCHING SYNOPTIC DATA...":"🌀 FETCH SYNOPTIC CHART"}
           </button>
-          {seaGridError && <div style={{ color: "#EF4444", fontSize: 10, marginTop: 6 }}>{seaGridError}</div>}
-          {seaGrid && <div style={{ color: "#64748B", fontSize: 9, marginTop: 6 }}>{seaGrid.results.length} grid points fetched</div>}
-          <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, cursor: "pointer" }}>
-            <input type="checkbox" checked={showSeaGrid} onChange={(e) => setShowSeaGrid(e.target.checked)} style={{ accentColor: "#22D3EE" }} />
-            <span style={{ color: "#94A3B8", fontSize: 11 }}>Show sea weather overlay</span>
+          {gridError&&<div style={{color:"#EF4444",fontSize:10,marginTop:6}}>{gridError}</div>}
+          {marineGrid&&<div style={{color:"#64748B",fontSize:9,marginTop:4}}>{marineGrid.results.length} pts · {maxHourIdx}h forecast</div>}
+          <label style={{display:"flex",alignItems:"center",gap:6,marginTop:8,cursor:"pointer"}}>
+            <input type="checkbox" checked={showGrid} onChange={e=>setShowGrid(e.target.checked)} style={{accentColor:"#F59E0B"}}/>
+            <span style={{color:"#94A3B8",fontSize:11}}>Show overlay on chart</span>
           </label>
           {/* Legend */}
-          {seaGrid && showSeaGrid && (() => {
-            const legend = getColorLegend(seaGridMode);
-            return (
-              <div style={{ marginTop: 8, padding: 8, background: "#0F172A", borderRadius: 4, border: "1px solid #334155" }}>
-                <div style={{ color: "#64748B", fontSize: 9, fontWeight: 700, marginBottom: 4, textTransform: "uppercase", letterSpacing: "0.1em" }}>
-                  {legend.title} — Gradient + Isolines
-                </div>
-                <div style={{ display: "flex", gap: 3, flexWrap: "wrap" }}>
-                  {legend.items.map(({ label, color }) => (
-                    <div key={label} style={{ display: "flex", alignItems: "center", gap: 2 }}>
-                      <div style={{ width: 8, height: 8, borderRadius: 1, background: color }} />
-                      <span style={{ fontSize: 8, color: "#94A3B8" }}>{label}</span>
+          {marineGrid&&showGrid&&(()=>{const lg=getColorLegend(gridMode);return(
+            <div style={{marginTop:8,padding:8,background:"#0F172A",borderRadius:4,border:"1px solid #334155"}}>
+              <div style={{color:"#64748B",fontSize:9,fontWeight:700,marginBottom:4}}>{lg.title}</div>
+              <div style={{display:"flex",gap:4,flexWrap:"wrap"}}>
+                {lg.items.map(({label,color})=>(
+                  <div key={label} style={{display:"flex",alignItems:"center",gap:2}}>
+                    <div style={{width:10,height:10,borderRadius:1,background:color}}/>
+                    <span style={{fontSize:8,color:"#94A3B8"}}>{label}</span>
+                  </div>))}
+              </div>
+            </div>
+          );}
+          )()}
+        </Panel>
+
+        {/* Waypoint ETA table */}
+        {voyageWPs && <Panel style={{maxHeight:280,overflowY:"auto"}}>
+          {SH("Waypoint ETAs")}
+          <table style={{width:"100%",borderCollapse:"collapse",fontSize:9,fontFamily:"'JetBrains Mono',monospace"}}>
+            <thead><tr style={{color:"#64748B"}}>
+              <th style={{textAlign:"left",padding:"2px 3px",borderBottom:"1px solid #334155"}}>#</th>
+              <th style={{textAlign:"left",padding:"2px 3px",borderBottom:"1px solid #334155"}}>Name</th>
+              <th style={{textAlign:"right",padding:"2px 3px",borderBottom:"1px solid #334155"}}>NM</th>
+              <th style={{textAlign:"right",padding:"2px 3px",borderBottom:"1px solid #334155"}}>ETA (UTC)</th>
+            </tr></thead>
+            <tbody>{voyageWPs.map((wp,i)=>(
+              <tr key={i} style={{color:"#CBD5E1",background:i===0||i===voyageWPs.length-1?"#0F172A40":"transparent"}}>
+                <td style={{padding:"2px 3px",borderBottom:"1px solid #1E293B",color:i===0?"#16A34A":i===voyageWPs.length-1?"#DC2626":"#F59E0B",fontWeight:800}}>{i+1}</td>
+                <td style={{padding:"2px 3px",borderBottom:"1px solid #1E293B",maxWidth:100,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{wp.name||`WP${i+1}`}</td>
+                <td style={{padding:"2px 3px",borderBottom:"1px solid #1E293B",textAlign:"right",color:"#3B82F6"}}>{wp.cumNM?.toFixed(0)||"0"}</td>
+                <td style={{padding:"2px 3px",borderBottom:"1px solid #1E293B",textAlign:"right",color:"#94A3B8",fontSize:8}}>
+                  {new Date(wp.etaMs).toUTCString().slice(5,22)}
+                </td>
+              </tr>))}
+            </tbody>
+          </table>
+        </Panel>}
+      </div>
+
+      {/* ═══ RIGHT PANEL: Chart + Timeline ══════════════════════════════════ */}
+      <div style={{display:"flex",flexDirection:"column",gap:12}}>
+
+        {/* Forecast scrubber header */}
+        {marineGrid && <div style={{background:panelBg,borderRadius:8,padding:"10px 16px",border:"1px solid #334155",display:"flex",alignItems:"center",gap:12}}>
+          <span style={{color:"#94A3B8",fontSize:10,whiteSpace:"nowrap"}}>Forecast Hour:</span>
+          <input type="range" min={0} max={maxHourIdx-1} value={chartHourIdx}
+            onChange={e=>setChartHourIdx(parseInt(e.target.value))}
+            style={{flex:1,accentColor:"#F59E0B"}} />
+          <span style={{color:"#F59E0B",fontSize:11,fontWeight:800,whiteSpace:"nowrap",fontFamily:"'JetBrains Mono',monospace"}}>
+            +{chartHourIdx}h — {new Date(Date.now()+chartHourIdx*3600000).toUTCString().slice(5,22)} UTC
+          </span>
+        </div>}
+
+        {/* Map */}
+        <div style={{background:panelBg,borderRadius:8,border:"1px solid #334155",overflow:"hidden",flex:1,minHeight:480,position:"relative"}}>
+          <MapContainer center={route?[route.waypoints[0].lat,route.waypoints[0].lon]:[45,-20]} zoom={4}
+            style={{height:"100%",width:"100%",background:"#060D1A"}} zoomControl attributionControl>
+            <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
+              attribution='&copy; OSM &copy; CARTO' />
+            <TileLayer url="https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png"
+              attribution='&copy; OpenSeaMap' opacity={0.65} />
+            <CaptureMap mapRef={mapRef} />
+            {/* Synoptic overlay */}
+            {showGrid && marineGrid && (
+              <MeteoCanvasOverlay
+                marineGrid={marineGrid}
+                atmoGrid={showAtmo ? atmoGrid : null}
+                mode={gridMode}
+                shipParams={{Tr:shipParams?.Tr||14,speed:voyageSpeed,heading:0,Lwl:shipParams?.Lwl||200}}
+                hourIdx={chartHourIdx}
+              />
+            )}
+            {route && <FitBounds waypoints={route.waypoints} />}
+
+            {/* Risk-coloured route segments (voyage weather loaded) */}
+            {voyageWeather?.length > 1 && voyageWeather.slice(0,-1).map((pt,i)=>(
+              <Polyline key={`seg-${i}`}
+                positions={[[pt.lat,pt.lon],[voyageWeather[i+1].lat,voyageWeather[i+1].lon]]}
+                pathOptions={{color:riskColor(pt.riskSeverity),weight:5,opacity:0.9}} />
+            ))}
+            {/* Base route line (no weather yet) */}
+            {route && !voyageWeather && (
+              <Polyline positions={route.waypoints.map(w=>[w.lat,w.lon])}
+                pathOptions={{color:"#F59E0B",weight:3,opacity:0.85,dashArray:"8,6"}} />
+            )}
+
+            {/* BOSP marker */}
+            {route && <Marker position={[route.waypoints[0].lat,route.waypoints[0].lon]} icon={bospIcon}>
+              <Tooltip direction="top" offset={[0,-18]} permanent>
+                <b style={{fontFamily:"'JetBrains Mono',monospace"}}>BOSP</b>
+              </Tooltip>
+              <Popup><WpPopup wp={{...route.waypoints[0],...(voyageWPs?.[0]||{}),
+                weather:voyageWeather?.find(p=>Math.abs(p.lat-route.waypoints[0].lat)<0.1)?.weather||null}} shipParams={shipParams}/></Popup>
+            </Marker>}
+
+            {/* EOSP marker */}
+            {route && route.waypoints.length>1 && (() => {
+              const last=route.waypoints[route.waypoints.length-1];
+              const lastVW=voyageWPs?.[voyageWPs.length-1];
+              const lastWeather=voyageWeather?.[voyageWeather.length-1];
+              return (
+                <Marker position={[last.lat,last.lon]} icon={eospIcon}>
+                  <Tooltip direction="top" offset={[0,-18]} permanent>
+                    <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10}}>
+                      <b>EOSP</b>{lastVW&&<><br/>{new Date(lastVW.etaMs).toUTCString().slice(5,22)}</>}
+                    </div>
+                  </Tooltip>
+                  <Popup><WpPopup wp={{...last,...(lastVW||{}),weather:lastWeather?.weather||null}} shipParams={shipParams}/></Popup>
+                </Marker>
+              );
+            })()}
+
+            {/* Intermediate waypoints */}
+            {route && route.waypoints.slice(1,-1).map((wp,i)=>{
+              const vwp=voyageWPs?.[i+1];
+              const nearWx=voyageWeather?.find(p=>Math.abs(p.lat-wp.lat)<0.5&&Math.abs(p.lon-wp.lon)<0.5);
+              const sev=nearWx?.riskSeverity??0;
+              return (
+                <Marker key={wp.id} position={[wp.lat,wp.lon]} icon={riskIcon(sev,i+2)}>
+                  {route.waypoints.length<=20&&<Tooltip direction="top" offset={[0,-14]} permanent>
+                    <span style={{fontSize:9,fontFamily:"'JetBrains Mono',monospace"}}>{wp.name||`WP${i+2}`}</span>
+                  </Tooltip>}
+                  <Popup><WpPopup wp={{...wp,...(vwp||{}),weather:nearWx?.weather||null,motions:nearWx?.motions||null,motionStatus:nearWx?.motionStatus||null}} shipParams={shipParams}/></Popup>
+                </Marker>
+              );
+            })}
+          </MapContainer>
+        </div>
+
+        {/* ── Voyage Risk Timeline ── */}
+        {voyageWeather?.length > 0 && (() => {
+          const maxWh = Math.max(...voyageWeather.map(p=>p.weather?.waveHeight||0),1);
+          const totalMs = new Date(bospDT).getTime();
+          const eospMs  = voyageWPs?.[voyageWPs.length-1]?.etaMs || totalMs+1;
+          return (
+            <div style={{background:panelBg,borderRadius:8,padding:"12px 16px",border:"1px solid #334155"}}>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+                {SH("Voyage Risk & Weather Profile")}
+                <div style={{display:"flex",gap:8,flexShrink:0}}>
+                  {[0,1,2,3,4,5].map(s=>(
+                    <div key={s} style={{display:"flex",alignItems:"center",gap:3}}>
+                      <div style={{width:8,height:8,borderRadius:1,background:riskColor(s)}}/>
+                      <span style={{fontSize:8,color:"#94A3B8"}}>{["MIN","LOW","MOD","ELEV","HIGH","CRIT"][s]}</span>
                     </div>
                   ))}
                 </div>
               </div>
-            );
-          })()}
-        </div>
-
-        {/* Leg Table */}
-        {routeStats && (
-          <div style={{ background: panelBg, borderRadius: 8, padding: 16, border: "1px solid #334155", overflowY: "auto", maxHeight: 250 }}>
-            {sectionHeader("Legs")}
-            <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 9, fontFamily: "'JetBrains Mono', monospace" }}>
-              <thead>
-                <tr style={{ color: "#64748B" }}>
-                  <th style={{ textAlign: "left", padding: "2px 4px", borderBottom: "1px solid #334155" }}>#</th>
-                  <th style={{ textAlign: "left", padding: "2px 4px", borderBottom: "1px solid #334155" }}>From → To</th>
-                  <th style={{ textAlign: "right", padding: "2px 4px", borderBottom: "1px solid #334155" }}>NM</th>
-                  <th style={{ textAlign: "right", padding: "2px 4px", borderBottom: "1px solid #334155" }}>BRG°</th>
-                </tr>
-              </thead>
-              <tbody>
-                {routeStats.legs.map((leg, i) => (
-                  <tr key={i} style={{ color: "#CBD5E1" }}>
-                    <td style={{ padding: "2px 4px", borderBottom: "1px solid #1E293B" }}>{i + 1}</td>
-                    <td style={{ padding: "2px 4px", borderBottom: "1px solid #1E293B", maxWidth: 140, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{leg.from} → {leg.to}</td>
-                    <td style={{ padding: "2px 4px", borderBottom: "1px solid #1E293B", textAlign: "right", color: "#3B82F6" }}>{leg.distNM.toFixed(1)}</td>
-                    <td style={{ padding: "2px 4px", borderBottom: "1px solid #1E293B", textAlign: "right", color: "#F59E0B" }}>{leg.bearing.toFixed(0)}</td>
-                  </tr>
+              {/* Bar chart */}
+              <div style={{display:"flex",gap:1,alignItems:"flex-end",height:72,overflowX:"auto"}}>
+                {voyageWeather.map((pt,i)=>{
+                  const ht=Math.max(10,(pt.weather?.waveHeight||0)/maxWh*100);
+                  const lbl=pt.etaMs ? new Date(pt.etaMs).toUTCString().slice(5,11) : "";
+                  return (
+                    <div key={i} title={`${lbl} UTC\n${["MIN","LOW","MOD","ELEV","HIGH","CRIT","FORB"][pt.riskSeverity]} | Hs=${pt.weather?.waveHeight?.toFixed(1)||"?"}m | Tw=${pt.weather?.wavePeriod?.toFixed(1)||"?"}s`}
+                      style={{flex:"1 0 8px",minWidth:8,maxWidth:22,height:`${ht}%`,
+                        background:riskColor(pt.riskSeverity),borderRadius:"2px 2px 0 0",
+                        opacity:0.85,cursor:"pointer",transition:"opacity 0.15s"}}
+                      onMouseEnter={e=>e.target.style.opacity=1}
+                      onMouseLeave={e=>e.target.style.opacity=0.85} />
+                  );
+                })}
+              </div>
+              {/* Time axis */}
+              <div style={{display:"flex",justifyContent:"space-between",marginTop:4,fontSize:9,color:"#64748B",fontFamily:"'JetBrains Mono',monospace"}}>
+                <span>BOSP {new Date(bospDT).toUTCString().slice(5,16)} UTC</span>
+                <span style={{color:"#3B82F6"}}>{voyageWPs?.[voyageWPs.length-1]?.cumNM?.toFixed(0)||"—"} NM</span>
+                <span>EOSP {new Date(eospMs).toUTCString().slice(5,16)} UTC</span>
+              </div>
+              {/* Summary row */}
+              <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,marginTop:8}}>
+                {[
+                  {label:"Max Hs",val:(Math.max(...voyageWeather.map(p=>p.weather?.waveHeight||0))).toFixed(1)+"m",c:"#3B82F6"},
+                  {label:"Max Roll",val:(Math.max(...voyageWeather.map(p=>p.motions?.roll||0))).toFixed(1)+"°",c:"#F59E0B"},
+                  {label:"Max Risk",val:["MIN","LOW","MOD","ELEV","HIGH","CRIT","FORB"][maxRisk],c:riskColor(maxRisk)},
+                  {label:"Duration",val:voyageDaysStr+" d",c:"#94A3B8"},
+                ].map(({label,val,c})=>(
+                  <div key={label} style={{textAlign:"center",background:"#0F172A",borderRadius:4,padding:"4px 0"}}>
+                    <div style={{color:c,fontWeight:800,fontSize:13,fontFamily:"'JetBrains Mono',monospace"}}>{val}</div>
+                    <div style={{color:"#64748B",fontSize:8,textTransform:"uppercase",letterSpacing:"0.1em"}}>{label}</div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
-
-      {/* ── RIGHT PANEL: Chart ── */}
-      <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-        <div style={{ background: panelBg, borderRadius: 8, border: "1px solid #334155", overflow: "hidden", flex: 1, minHeight: 450, position: "relative" }}>
-          {route ? (
-            <MapContainer center={[route.waypoints[0].lat, route.waypoints[0].lon]} zoom={5}
-              style={{ height: "100%", width: "100%", background: "#0B1120" }}
-              zoomControl={true} attributionControl={true}>
-              {/* Base: OpenStreetMap dark */}
-              <TileLayer
-                url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>'
-              />
-              {/* OpenSeaMap nautical overlay */}
-              <TileLayer
-                url="https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png"
-                attribution='&copy; <a href="https://www.openseamap.org">OpenSeaMap</a>'
-                opacity={0.7}
-              />
-              <CaptureMap mapRef={mapRef} />
-              {/* Meteo canvas overlay: smooth gradient + isolines */}
-              {showSeaGrid && seaGrid && (
-                <MeteoCanvasOverlay gridData={seaGrid} mode={seaGridMode}
-                  shipParams={{ Tr: shipParams?.Tr || 0, speed: shipParams?.speed || 15, heading: shipParams?.heading || 0 }} />
-              )}
-              {/* Fit bounds */}
-              <FitBounds waypoints={route.waypoints} />
-              {/* Route polyline */}
-              <Polyline
-                positions={route.waypoints.map(w => [w.lat, w.lon])}
-                pathOptions={{ color: "#F59E0B", weight: 3, opacity: 0.9, dashArray: "8,6" }}
-              />
-              {/* Waypoint markers */}
-              {route.waypoints.map((wp, i) => (
-                <Marker key={wp.id} position={[wp.lat, wp.lon]}
-                  icon={wpIcon(i === 0 ? "#16A34A" : i === route.waypoints.length - 1 ? "#DC2626" : "#3B82F6", i + 1)}>
-                  <Tooltip direction="top" offset={[0, -14]} permanent={route.waypoints.length <= 12}>
-                    <div style={{ fontSize: 10, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{wp.name}</div>
-                  </Tooltip>
-                  <Popup>
-                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 11 }}>
-                      <div style={{ fontWeight: 800, marginBottom: 4 }}>{wp.name}</div>
-                      <div>Lat: {wp.lat.toFixed(4)}°</div>
-                      <div>Lon: {wp.lon.toFixed(4)}°</div>
-                      {wp.speed && <div>Plan Speed: {wp.speed} kts</div>}
-                      {routeStats?.legs[i] && <div>Next leg: {routeStats.legs[i].distNM.toFixed(1)} NM @ {routeStats.legs[i].bearing.toFixed(0)}°T</div>}
-                    </div>
-                  </Popup>
-                </Marker>
-              ))}
-
-              {/* Weather risk circles along route */}
-              {showWeatherOverlay && weatherWithRisk.map((pt, i) => (
-                <Circle key={`wx-${i}`} center={[pt.lat, pt.lon]}
-                  radius={sampleInterval * 926} // NM to meters approx
-                  pathOptions={{ color: riskColor(pt.risk), fillColor: riskColor(pt.risk), fillOpacity: 0.15, weight: 1, opacity: 0.4 }}>
-                  <Popup>
-                    <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10 }}>
-                      <div style={{ fontWeight: 800, color: riskColor(pt.risk) }}>{getRiskLabel(pt.risk)} — R={pt.ratio?.toFixed(3) || "N/A"}</div>
-                      <div>Pos: {pt.lat.toFixed(2)}°, {pt.lon.toFixed(2)}°</div>
-                      {pt.weather && <>
-                        <div>Hs: {pt.weather.waveHeight?.toFixed(1)}m | Tw: {pt.weather.wavePeriod?.toFixed(1)}s</div>
-                        <div>Wave Dir: {pt.weather.waveDir?.toFixed(0)}°T</div>
-                        {pt.weather.swellHeight && <div>Swell: {pt.weather.swellHeight?.toFixed(1)}m / {pt.weather.swellPeriod?.toFixed(1)}s</div>}
-                      </>}
-                      {pt.error && <div style={{ color: "#EF4444" }}>{pt.error}</div>}
-                    </div>
-                  </Popup>
-                </Circle>
-              ))}
-            </MapContainer>
-          ) : (
-            /* Default map (no route loaded) — still supports sea weather overlay */
-            <MapContainer center={[45, -20]} zoom={4}
-              style={{ height: "100%", width: "100%", background: "#0B1120" }}
-              zoomControl={true} attributionControl={true}>
-              <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png"
-                attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OSM</a> &copy; <a href="https://carto.com/">CARTO</a>' />
-              <TileLayer url="https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png"
-                attribution='&copy; <a href="https://www.openseamap.org">OpenSeaMap</a>' opacity={0.7} />
-              <CaptureMap mapRef={mapRef} />
-              {showSeaGrid && seaGrid && (
-                <MeteoCanvasOverlay gridData={seaGrid} mode={seaGridMode}
-                  shipParams={{ Tr: shipParams?.Tr || 0, speed: shipParams?.speed || 15, heading: shipParams?.heading || 0 }} />
-              )}
-            </MapContainer>
-          )}
-        </div>
-
-        {/* Weather strip along route */}
-        {weatherWithRisk.length > 0 && (
-          <div style={{ background: panelBg, borderRadius: 8, padding: 12, border: "1px solid #334155" }}>
-            {sectionHeader("Route Weather Profile — Risk by Position")}
-            <div style={{ display: "flex", gap: 2, alignItems: "flex-end", height: 60, overflowX: "auto" }}>
-              {weatherWithRisk.map((pt, i) => (
-                <div key={i} title={`${pt.name}: ${getRiskLabel(pt.risk)} (Hs=${pt.weather?.waveHeight?.toFixed(1) || "?"}m)`}
-                  style={{
-                    flex: "1 0 8px", minWidth: 8, maxWidth: 20,
-                    height: `${Math.max(10, (pt.weather?.waveHeight || 0) / 8 * 100)}%`,
-                    background: riskColor(pt.risk), borderRadius: "2px 2px 0 0",
-                    opacity: 0.8, cursor: "pointer", transition: "opacity 0.2s",
-                  }}
-                  onMouseEnter={(e) => e.target.style.opacity = 1}
-                  onMouseLeave={(e) => e.target.style.opacity = 0.8}
-                />
-              ))}
+              </div>
             </div>
-            <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4, fontSize: 9, color: "#64748B", fontFamily: "'JetBrains Mono', monospace" }}>
-              <span>{route?.waypoints[0]?.name}</span>
-              <span>{routeStats?.totalNM.toFixed(0)} NM</span>
-              <span>{route?.waypoints[route.waypoints.length - 1]?.name}</span>
+          );
+        })()}
+
+        {/* Route Stats (no weather yet) */}
+        {route && !voyageWeather && routeStats && (
+          <div style={{background:panelBg,borderRadius:8,padding:"12px 16px",border:"1px solid #334155"}}>
+            {SH("Route Info")}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,fontSize:11}}>
+              <div><span style={{color:"#64748B"}}>Waypoints: </span><b style={{color:"#F59E0B"}}>{route.waypoints.length}</b></div>
+              <div><span style={{color:"#64748B"}}>Distance: </span><b style={{color:"#3B82F6"}}>{routeStats.totalNM.toFixed(0)} NM</b></div>
+              <div><span style={{color:"#64748B"}}>ETA: </span><b style={{color:"#DC2626"}}>{voyageDaysStr} d</b></div>
             </div>
           </div>
         )}
