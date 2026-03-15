@@ -56,6 +56,7 @@ async function fetchGridWeather(bounds, gridRes = 2.0) {
   const batchSize = 40;
   const results = [];
   for (let i = 0; i < points.length; i += batchSize) {
+    if (i > 0) await delay(300); // pace requests to avoid HTTP 429
     const batch = points.slice(i, i + batchSize);
     const latStr = batch.map(p => p.lat).join(",");
     const lonStr = batch.map(p => p.lon).join(",");
@@ -84,33 +85,36 @@ async function fetchGridWeather(bounds, gridRes = 2.0) {
   return { results, gridRes, bounds: { south, north, west, east } };
 }
 
-// ─── Weather along route fetcher ──────────────────────────────────────────────
+// ─── Weather along route fetcher (batched to avoid rate limits) ───────────────
+const delay = (ms) => new Promise(r => setTimeout(r, ms));
+
 async function fetchWeatherAlongRoute(samplePoints) {
-  // Batch points in groups (Open-Meteo allows multi-location in a single call)
   const results = [];
-  for (const pt of samplePoints) {
+  const batchSize = 40;
+  for (let i = 0; i < samplePoints.length; i += batchSize) {
+    if (i > 0) await delay(300);
+    const batch = samplePoints.slice(i, i + batchSize);
+    const latStr = batch.map(p => p.lat.toFixed(2)).join(",");
+    const lonStr = batch.map(p => p.lon.toFixed(2)).join(",");
+    const url = `https://marine-api.open-meteo.com/v1/marine?latitude=${latStr}&longitude=${lonStr}&hourly=wave_height,wave_direction,wave_period,swell_wave_height,swell_wave_period,swell_wave_direction&forecast_days=1&timeformat=unixtime`;
     try {
-      const url = `https://marine-api.open-meteo.com/v1/marine?latitude=${pt.lat}&longitude=${pt.lon}&hourly=wave_height,wave_direction,wave_period,swell_wave_height,swell_wave_period,swell_wave_direction&forecast_days=3&timeformat=unixtime`;
       const resp = await fetch(url);
-      if (!resp.ok) { results.push({ ...pt, weather: null, error: `HTTP ${resp.status}` }); continue; }
+      if (!resp.ok) { batch.forEach(pt => results.push({ ...pt, weather: null, error: `HTTP ${resp.status}` })); continue; }
       const data = await resp.json();
-      if (data.error) { results.push({ ...pt, weather: null, error: data.reason }); continue; }
-      const h = data.hourly;
-      // Get current/nearest hour data
-      const now = Date.now();
-      const idx = h.time.reduce((best, t, i) => Math.abs(t * 1000 - now) < Math.abs(h.time[best] * 1000 - now) ? i : best, 0);
-      results.push({
-        ...pt,
-        weather: {
-          waveHeight: h.wave_height?.[idx], waveDir: h.wave_direction?.[idx], wavePeriod: h.wave_period?.[idx],
-          swellHeight: h.swell_wave_height?.[idx], swellPeriod: h.swell_wave_period?.[idx], swellDir: h.swell_wave_direction?.[idx],
-        },
-        hourly: h.time.map((t, i) => ({ time: t * 1000, waveHeight: h.wave_height?.[i], wavePeriod: h.wave_period?.[i], waveDir: h.wave_direction?.[i] })),
-        error: null,
+      const arr = Array.isArray(data) ? data : [data];
+      arr.forEach((d, j) => {
+        if (d.error || !d.hourly) { results.push({ ...batch[j], weather: null, error: d.reason || "No data" }); return; }
+        const h = d.hourly;
+        const now = Date.now();
+        const idx = h.time.reduce((best, t, k) => Math.abs(t*1000-now) < Math.abs(h.time[best]*1000-now) ? k : best, 0);
+        results.push({
+          ...batch[j],
+          weather: { waveHeight: h.wave_height?.[idx], waveDir: h.wave_direction?.[idx], wavePeriod: h.wave_period?.[idx],
+            swellHeight: h.swell_wave_height?.[idx], swellPeriod: h.swell_wave_period?.[idx], swellDir: h.swell_wave_direction?.[idx] },
+          error: null,
+        });
       });
-    } catch (e) {
-      results.push({ ...pt, weather: null, error: e.message });
-    }
+    } catch (e) { batch.forEach(pt => results.push({ ...pt, weather: null, error: e.message })); }
   }
   return results;
 }
