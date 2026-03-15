@@ -1,0 +1,23 @@
+{
+  "name": "parametric-rolling-calculator",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Professional mariner-standard parametric rolling calculator with live weather integration",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-react": "^4.3.4",
+    "vite": "^5.4.14"
+  },
+  "keywords": ["parametric-rolling", "maritime", "ship-stability", "IMO", "marine-weather"],
+  "license": "MIT",
+  "author": ""
+}
