@@ -508,6 +508,7 @@ export default function RouteChart({ shipParams }) {
           {!cmemsUser && <div style={{fontSize:9,color:"#475569",lineHeight:1.5}}>
             Free account: <a href="https://data.marine.copernicus.eu/register"
               target="_blank" rel="noreferrer" style={{color:"#7C3AED"}}>data.marine.copernicus.eu/register</a>
+            <br/>Requests route through the local Vite proxy — no CORS issues.
           </div>}
 
           <label style={{display:"flex",alignItems:"center",gap:6,marginTop:4,cursor:"pointer"}}>
