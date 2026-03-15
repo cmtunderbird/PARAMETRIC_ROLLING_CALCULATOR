@@ -10,14 +10,22 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "leaflet": "^1.9.4",
     "react": "^18.3.1",
-    "react-dom": "^18.3.1"
+    "react-dom": "^18.3.1",
+    "react-leaflet": "^4.2.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
     "vite": "^5.4.14"
   },
-  "keywords": ["parametric-rolling", "maritime", "ship-stability", "IMO", "marine-weather"],
+  "keywords": [
+    "parametric-rolling",
+    "maritime",
+    "ship-stability",
+    "IMO",
+    "marine-weather"
+  ],
   "license": "MIT",
   "author": ""
 }
