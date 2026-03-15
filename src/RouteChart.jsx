@@ -49,7 +49,7 @@ async function fetchGridWeather(bounds, gridRes = 2.0) {
   const lats = [], lons = [];
   for (let la = south; la <= north; la += gridRes) lats.push(parseFloat(la.toFixed(2)));
   for (let lo = west; lo <= east; lo += gridRes) lons.push(parseFloat(lo.toFixed(2)));
-  if (lats.length * lons.length > 400) throw new Error(`Grid too large (${lats.length}x${lons.length}). Zoom in or increase resolution.`);
+  if (lats.length * lons.length > 2500) throw new Error(`Grid too large (${lats.length}x${lons.length}=${lats.length*lons.length}). Zoom in or increase resolution.`);
   const points = [];
   for (const la of lats) for (const lo of lons) points.push({ lat: la, lon: lo });
   // Open-Meteo allows comma-separated lat/lon for multi-point (max ~50 per request)
