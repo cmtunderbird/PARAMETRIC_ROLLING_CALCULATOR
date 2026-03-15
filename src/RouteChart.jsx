@@ -18,6 +18,8 @@ import { buildGridPoints, fetchMarineGrid, fetchAtmosphericGrid,
          closestHourIdx, snapshotAt, calcVoyageETAs } from "./weatherApi.js";
 import { calcMotions, getSafetyCostFactor, getMotionStatus,
          getRiskLevel, calcParametricRiskRatio, calcEncounterPeriod } from "./physics.js";
+import { calcCurrentPosition, ShipPositionLayer,
+         ShipPolarDiagram, ShipInfoPanel } from "./ShipDashboard.jsx";
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -131,6 +133,35 @@ export default function RouteChart({ shipParams }) {
   const mapRef     = useRef(null);
   const fileRef    = useRef(null);
   const anyLoading = vwLoading||gridLoading;
+
+  // ── Live ship position (updates every 30 s) ──
+  const [shipPos,    setShipPos]    = useState(null);
+  const [shipWx,     setShipWx]     = useState(null);
+  const [shipMotion, setShipMotion] = useState(null);
+  const [shipMStat,  setShipMStat]  = useState(null);
+  const [showPolar,  setShowPolar]  = useState(false);
+
+  // Recompute position whenever voyageWPs or voyageWeather changes, and every 30s
+  useEffect(() => {
+    function tick() {
+      if (!voyageWPs?.length) return;
+      const pos = calcCurrentPosition(voyageWPs);
+      setShipPos(pos);
+      if (pos?.status === "underway" && voyageWeather?.length) {
+        // Find closest weather sample to current position
+        const closest = voyageWeather.reduce((best, p) => {
+          const d = Math.hypot(p.lat - pos.lat, p.lon - pos.lon);
+          return d < Math.hypot(best.lat - pos.lat, best.lon - pos.lon) ? p : best;
+        });
+        setShipWx(closest.weather || null);
+        setShipMotion(closest.motions || null);
+        setShipMStat(closest.motionStatus || null);
+      }
+    }
+    tick();
+    const id = setInterval(tick, 30000);
+    return () => clearInterval(id);
+  }, [voyageWPs, voyageWeather]);
 
   useEffect(()=>{
     if(route?.waypoints){ setRouteStats(computeRouteStats(route.waypoints)); setVoyageWPs(null); setVoyageWeather(null); }
@@ -305,6 +336,21 @@ export default function RouteChart({ shipParams }) {
           </div>}
         </Panel>}
 
+        {/* Live Ship Position */}
+        {voyageWPs && <Panel>
+          {SH("⛵ Live Ship Position")}
+          <ShipInfoPanel pos={shipPos} weather={shipWx} shipParams={shipParams}
+            motions={shipMotion} motionStatus={shipMStat} />
+          {shipPos?.status === "underway" && voyageWeather?.length > 0 && (
+            <button onClick={() => setShowPolar(p => !p)}
+              style={{...btnSt,width:"100%",marginTop:10,
+                background:showPolar?"linear-gradient(90deg,#7C3AED,#6D28D9)":"linear-gradient(90deg,#334155,#475569)",
+                color:"#E2E8F0"}}>
+              {showPolar ? "▲ HIDE POLAR DIAGRAM" : "🎯 SHOW POLAR RISK DIAGRAM"}
+            </button>
+          )}
+        </Panel>}
+
         {/* Voyage Weather Fetch */}
         {voyageWPs && <Panel>
           {SH("🌊 Fetch Voyage Weather")}
@@ -443,6 +489,11 @@ export default function RouteChart({ shipParams }) {
                 pathOptions={{color:"#F59E0B",weight:3,opacity:0.85,dashArray:"8,6"}} />
             )}
 
+            {/* Live ship position + vectors */}
+            {shipPos?.status === "underway" && (
+              <ShipPositionLayer pos={shipPos} weather={shipWx} />
+            )}
+
             {/* BOSP marker */}
             {route && <Marker position={[route.waypoints[0].lat,route.waypoints[0].lon]} icon={bospIcon}>
               <Tooltip direction="top" offset={[0,-18]} permanent>
@@ -485,6 +536,71 @@ export default function RouteChart({ shipParams }) {
             })}
           </MapContainer>
         </div>
+
+        {/* ── Synoptic Polar Risk Diagram ── */}
+        {showPolar && shipPos?.status === "underway" && (
+          <div style={{background:panelBg,borderRadius:8,padding:16,border:"1px solid #7C3AED50"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+              <div>
+                <div style={{color:"#A78BFA",fontSize:12,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>
+                  🎯 Synoptic Polar Risk Diagram — Parametric Rolling
+                </div>
+                <div style={{color:"#64748B",fontSize:10,marginTop:3}}>
+                  Thermal heatmap: risk intensity across all headings × speeds &nbsp;|&nbsp;
+                  Tw = {shipWx?.wavePeriod?.toFixed(1)||"—"}s &nbsp;·&nbsp;
+                  Hs = {shipWx?.waveHeight?.toFixed(1)||"—"}m &nbsp;·&nbsp;
+                  Tᵣ = {(shipParams?.Tr||14).toFixed(1)}s
+                </div>
+              </div>
+              <div style={{textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontSize:10}}>
+                <div style={{color:"#22D3EE"}}>Pos: {Math.abs(shipPos.lat).toFixed(3)}°{shipPos.lat>=0?"N":"S"} {Math.abs(shipPos.lon).toFixed(3)}°{shipPos.lon>=0?"E":"W"}</div>
+                <div style={{color:"#94A3B8"}}>Hdg: {shipPos.heading.toFixed(0)}°T &nbsp; COG: {shipPos.cog.toFixed(0)}°T</div>
+              </div>
+            </div>
+            <div style={{display:"flex",gap:20,alignItems:"flex-start",flexWrap:"wrap"}}>
+              {/* Polar diagram */}
+              <ShipPolarDiagram pos={shipPos} weather={shipWx} shipParams={shipParams} />
+              {/* Right side: current state detail */}
+              <div style={{flex:1,minWidth:220,display:"flex",flexDirection:"column",gap:10}}>
+                <div style={{padding:12,background:"#0F172A",borderRadius:6,border:"1px solid #334155"}}>
+                  <div style={{color:"#F59E0B",fontSize:10,fontWeight:700,letterSpacing:"0.1em",marginBottom:8,textTransform:"uppercase"}}>Current State</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}>
+                    {[
+                      {l:"Ship Heading",v:`${shipPos.heading.toFixed(0)}°T`,c:"#22D3EE"},
+                      {l:"COG",v:`${shipPos.cog.toFixed(0)}°T`,c:"#3B82F6"},
+                      {l:"Wave dir (FROM)",v:`${shipWx?.waveDir?.toFixed(0)||"—"}°T`,c:"#EF4444"},
+                      {l:"Swell dir (FROM)",v:`${shipWx?.swellDir?.toFixed(0)||"—"}°T`,c:"#F59E0B"},
+                      {l:"Wind dir (FROM)",v:`${shipWx?.windDir?.toFixed(0)||"—"}°T`,c:"#E2E8F0"},
+                      {l:"Rel. Wave angle",v:`${(((shipWx?.waveDir||0)-(shipPos?.heading||0)+360)%360).toFixed(0)}°`,c:"#94A3B8"},
+                    ].map(({l,v,c})=>(
+                      <div key={l}><div style={{color:"#64748B",fontSize:9}}>{l}</div><div style={{color:c,fontWeight:700}}>{v}</div></div>
+                    ))}
+                  </div>
+                </div>
+                {shipMotion && <div style={{padding:12,background:"#0F172A",borderRadius:6,border:`1px solid ${shipMStat?.color||"#334155"}50`}}>
+                  <div style={{color:shipMStat?.color||"#F59E0B",fontSize:12,fontWeight:800,marginBottom:8}}>{shipMStat?.label||"—"}</div>
+                  {[
+                    {l:"Roll amplitude",v:`${shipMotion.roll?.toFixed(1)}°`,alert:shipMotion.roll>=25},
+                    {l:"Pitch amplitude",v:`${shipMotion.pitch?.toFixed(1)}°`,alert:shipMotion.pitch>=8},
+                    {l:"Bridge accel",v:`${shipMotion.bridgeAcc?.toFixed(2)} m/s²`,alert:shipMotion.bridgeAcc>=2.94},
+                    {l:"Slam probability",v:`${(shipMotion.slam*100).toFixed(1)}%`,alert:shipMotion.slam>=0.1},
+                    {l:"Parametric risk",v:`${(shipMotion.paramRisk*100).toFixed(0)}%`,alert:shipMotion.paramRisk>=0.5},
+                  ].map(({l,v,alert})=>(
+                    <div key={l} style={{display:"flex",justifyContent:"space-between",marginBottom:4,fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}>
+                      <span style={{color:"#64748B"}}>{l}</span>
+                      <span style={{color:alert?"#EF4444":"#E2E8F0",fontWeight:alert?800:400}}>{v}</span>
+                    </div>
+                  ))}
+                </div>}
+                <div style={{padding:10,background:"#0F172A",borderRadius:6,border:"1px solid #334155",fontSize:9,color:"#475569",lineHeight:1.6,fontFamily:"'JetBrains Mono',monospace"}}>
+                  <b style={{color:"#64748B"}}>Reading:</b> Red zones = Tᵣ ≈ 2Tₑ (resonance).
+                  Magenta ring = critical. The ─── red arc marks exact resonance heading
+                  at each speed. Keep ship heading away from red sectors.
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* ── Voyage Risk Timeline ── */}
         {voyageWeather?.length > 0 && (() => {
