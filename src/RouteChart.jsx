@@ -160,7 +160,6 @@ export default function RouteChart({ shipParams }) {
   const [weatherData, setWeatherData] = useState(null);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState(null);
-  const [selectedWP, setSelectedWP] = useState(null);
   const [showWeatherOverlay, setShowWeatherOverlay] = useState(true);
   const [sampleInterval, setSampleInterval] = useState(100);
   const [seaGrid, setSeaGrid] = useState(null);
@@ -428,8 +427,7 @@ export default function RouteChart({ shipParams }) {
               {/* Waypoint markers */}
               {route.waypoints.map((wp, i) => (
                 <Marker key={wp.id} position={[wp.lat, wp.lon]}
-                  icon={wpIcon(i === 0 ? "#16A34A" : i === route.waypoints.length - 1 ? "#DC2626" : "#3B82F6", i + 1)}
-                  eventHandlers={{ click: () => setSelectedWP(wp) }}>
+                  icon={wpIcon(i === 0 ? "#16A34A" : i === route.waypoints.length - 1 ? "#DC2626" : "#3B82F6", i + 1)}>
                   <Tooltip direction="top" offset={[0, -14]} permanent={route.waypoints.length <= 12}>
                     <div style={{ fontSize: 10, fontWeight: 700, fontFamily: "'JetBrains Mono', monospace" }}>{wp.name}</div>
                   </Tooltip>
