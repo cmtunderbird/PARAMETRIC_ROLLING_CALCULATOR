@@ -41,6 +41,9 @@ function CaptureMap({ mapRef }) {
 }
 
 
+// ─── Shared utility ──────────────────────────────────────────────────────────
+const delay = (ms) => new Promise(r => setTimeout(r, ms));
+
 async function fetchGridWeather(bounds, gridRes = 2.0) {
   const south = Math.floor(bounds.south / gridRes) * gridRes;
   const north = Math.ceil(bounds.north / gridRes) * gridRes;
@@ -86,7 +89,6 @@ async function fetchGridWeather(bounds, gridRes = 2.0) {
 }
 
 // ─── Weather along route fetcher (batched to avoid rate limits) ───────────────
-const delay = (ms) => new Promise(r => setTimeout(r, ms));
 
 async function fetchWeatherAlongRoute(samplePoints) {
   const results = [];
