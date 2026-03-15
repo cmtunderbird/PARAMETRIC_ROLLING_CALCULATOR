@@ -1,44 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import RouteChart from "./RouteChart.jsx";
-
-// ─── Constants & Physics Engine ───────────────────────────────────────────────
-const G = 9.81;
-const KTS_TO_MS = 0.51444;
-const DEG_TO_RAD = Math.PI / 180;
-
-function calcNaturalRollPeriod(B, GM, d, Lwl, method = "imo") {
-  if (GM <= 0 || B <= 0) return Infinity;
-  if (method === "imo") {
-    const C = 0.373 + 0.023 * (B / d) - 0.043 * (Lwl / 100);
-    return 2 * C * B / Math.sqrt(GM);
-  }
-  const k = 0.39 * B;
-  return (2 * Math.PI * k) / Math.sqrt(G * GM);
-}
-
-function calcWaveLength(Tw) {
-  return (G * Tw * Tw) / (2 * Math.PI);
-}
-
-function calcEncounterPeriod(Tw, V_kts, headingRel) {
-  if (Tw <= 0) return Tw;
-  const V = V_kts * KTS_TO_MS;
-  const alpha = headingRel * DEG_TO_RAD;
-  const waveSpeed = (G * Tw) / (2 * Math.PI);
-  const denom = 1 - (V * Math.cos(alpha)) / waveSpeed;
-  if (Math.abs(denom) < 0.01) return Infinity;
-  return Tw / Math.abs(denom);
-}
-
-function calcParametricRiskRatio(Tr, Te) {
-  if (Te <= 0 || Tr <= 0 || !isFinite(Te) || !isFinite(Tr)) return null;
-  return Tr / (2 * Te);
-}
-
-function calcSynchronousRiskRatio(Tr, Te) {
-  if (Te <= 0 || Tr <= 0 || !isFinite(Te) || !isFinite(Tr)) return null;
-  return Tr / Te;
-}
+import { G, KTS_TO_MS, DEG_TO_RAD, calcNaturalRollPeriod, calcWaveLength, calcEncounterPeriod, calcParametricRiskRatio, calcSynchronousRiskRatio, getRiskLevel } from "./physics.js";
 
 // ─── Nautical Coordinate Helpers (DD-MM.M N/S, DDD-MM.M E/W) ─────────────
 function decimalToNautical(decimal, isLat) {
@@ -61,18 +23,6 @@ function formatNauticalLat(deg, min, hemi) {
 function formatNauticalLon(deg, min, hemi) {
   return `${String(deg).padStart(3, "0")}°-${min.toFixed(1).padStart(4, "0")}′ ${hemi}`;
 }
-
-function getRiskLevel(ratio) {
-  if (ratio === null) return { level: "UNKNOWN", color: "#6B7280", severity: 0 };
-  const dev = Math.abs(ratio - 1.0);
-  if (dev <= 0.1) return { level: "CRITICAL", color: "#DC2626", severity: 5 };
-  if (dev <= 0.2) return { level: "HIGH", color: "#EA580C", severity: 4 };
-  if (dev <= 0.3) return { level: "ELEVATED", color: "#D97706", severity: 3 };
-  if (dev <= 0.4) return { level: "MODERATE", color: "#CA8A04", severity: 2 };
-  if (dev <= 0.5) return { level: "LOW", color: "#16A34A", severity: 1 };
-  return { level: "MINIMAL", color: "#0D9488", severity: 0 };
-}
-
 // ─── Weather API Functions ────────────────────────────────────────────────────
 const WEATHER_SOURCES = {
   "open-meteo-marine": {

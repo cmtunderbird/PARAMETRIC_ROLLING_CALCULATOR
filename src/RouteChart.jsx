@@ -4,6 +4,7 @@ import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 import { autoDetectAndParse, computeRouteStats, generateWeatherSamplePoints, generateSampleRTZ, haversineNM, bearing } from "./RouteParser.js";
 import MeteoCanvasOverlay, { getColorLegend } from "./MeteoOverlay.jsx";
+import { calcEncounterPeriod, calcParametricRiskRatio, getRiskSeverity, getRiskLabel } from "./physics.js";
 
 // ─── Leaflet icon fix (webpack/vite strips default icons) ─────────────────────
 delete L.Icon.Default.prototype._getIconUrl;
@@ -120,28 +121,6 @@ async function fetchWeatherAlongRoute(samplePoints) {
   }
   return results;
 }
-
-// ─── Parametric risk calculator (reused from App) ─────────────────────────────
-function calcEncounterPeriod(Tw, V_kts, headingRel) {
-  if (Tw <= 0) return Tw;
-  const V = V_kts * 0.51444, alpha = headingRel * Math.PI / 180;
-  const waveSpeed = (9.81 * Tw) / (2 * Math.PI);
-  const denom = 1 - (V * Math.cos(alpha)) / waveSpeed;
-  if (Math.abs(denom) < 0.01) return Infinity;
-  return Tw / Math.abs(denom);
-}
-function calcParamRatio(Tr, Te) {
-  if (Te <= 0 || Tr <= 0 || !isFinite(Te) || !isFinite(Tr)) return null;
-  return Tr / (2 * Te);
-}
-function getRiskSeverity(ratio) {
-  if (ratio === null) return 0;
-  const dev = Math.abs(ratio - 1.0);
-  if (dev <= 0.1) return 5; if (dev <= 0.2) return 4; if (dev <= 0.3) return 3;
-  if (dev <= 0.4) return 2; if (dev <= 0.5) return 1; return 0;
-}
-function getRiskLabel(sev) { return ["MINIMAL","LOW","MODERATE","ELEVATED","HIGH","CRITICAL"][sev] || "UNKNOWN"; }
-
 // ─── Styles ───────────────────────────────────────────────────────────────────
 const panelBg = "#1E293B";
 const inputStyle = { background: "#0F172A", border: "1px solid #334155", borderRadius: 4, color: "#E2E8F0", padding: "6px 8px", fontSize: 12, fontFamily: "'JetBrains Mono', monospace", width: "100%", boxSizing: "border-box", outline: "none" };
@@ -251,7 +230,7 @@ export default function RouteChart({ shipParams }) {
     const speed = shipParams.speed || 15;
     const relHdg = pt.weather.waveDir != null ? ((pt.weather.waveDir - (shipParams.heading || 0) + 360) % 360) : 0;
     const Te = calcEncounterPeriod(pt.weather.wavePeriod || 0, speed, relHdg);
-    const ratio = calcParamRatio(Tr, Te);
+    const ratio = calcParametricRiskRatio(Tr, Te);
     const risk = getRiskSeverity(ratio);
     return { ...pt, risk, ratio };
   }) || [];

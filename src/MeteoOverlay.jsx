@@ -7,6 +7,7 @@
 import { useEffect, useRef } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
+import { calcRiskIntensity } from "./physics.js";
 
 // ─── Color Scales — smooth meteorological palettes ───────────────────────────
 const WAVE_HEIGHT_STOPS = [
@@ -109,18 +110,6 @@ function extractIsolines(grid, rows, cols, level) {
   }
   return segs;
 }
-
-// ─── Risk calculation ────────────────────────────────────────────────────────
-function calcRiskIntensity(Tw, wDir, Tr, spd, hdg) {
-  if (!Tw || !Tr || Tr <= 0) return 0;
-  const V = (spd || 15) * 0.51444;
-  const rel = wDir != null ? ((wDir - (hdg || 0) + 360) % 360) : 0;
-  const ws = (9.81 * Tw) / (2 * Math.PI);
-  const den = 1 - (V * Math.cos(rel * Math.PI / 180)) / ws;
-  if (Math.abs(den) < 0.01) return 0;
-  return Math.max(0, 1 - Math.abs(Tr / (2 * Tw / Math.abs(den)) - 1));
-}
-
 // ─── Render high-res meteo image ─────────────────────────────────────────────
 function renderMeteoImage(gridData, mode, shipParams) {
   const { south, north, west, east } = gridData.bounds;
