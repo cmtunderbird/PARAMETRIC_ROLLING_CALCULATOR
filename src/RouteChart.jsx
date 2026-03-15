@@ -171,6 +171,9 @@ export default function RouteChart({ shipParams }) {
     return () => clearInterval(id);
   }, [voyageWPs, voyageWeather]);
 
+  // ── Total forecast hours available (needed by play effect below) ──
+  const maxHourIdx = marineGrid?.results?.find(r=>r.times)?.times?.length ?? 168;
+
   // ── Auto-advance forecast scrubber ──
   useEffect(() => {
     if (playRef.current) clearInterval(playRef.current);
@@ -242,8 +245,11 @@ export default function RouteChart({ shipParams }) {
       for (const p of ptsWithETA){ const k=`${p.lat.toFixed(1)},${p.lon.toFixed(1)}`; if(!seen.has(k)){seen.add(k);uniq.push(p);} }
 
       const [marineRaw, atmoRaw] = await Promise.all([fmg(uniq,7), fag(uniq,7)]);
-      const marineMap = new Map(marineRaw.map(r=>[`${r.lat.toFixed(1)},${r.lon.toFixed(1)}`,r]));
-      const atmoMap   = new Map(atmoRaw.map(r=>[`${r.lat.toFixed(1)},${r.lon.toFixed(1)}`,r]));
+      // unwrap cache envelope — fmg/fag now return {results, fromCache, fetchedAt}
+      const mResults = Array.isArray(marineRaw) ? marineRaw : (marineRaw?.results ?? []);
+      const aResults = Array.isArray(atmoRaw)   ? atmoRaw   : (atmoRaw?.results   ?? []);
+      const marineMap = new Map(mResults.map(r=>[`${r.lat.toFixed(1)},${r.lon.toFixed(1)}`,r]));
+      const atmoMap   = new Map(aResults.map(r=>[`${r.lat.toFixed(1)},${r.lon.toFixed(1)}`,r]));
 
       const results = ptsWithETA.map(p=>{
         const key=`${p.lat.toFixed(1)},${p.lon.toFixed(1)}`;
@@ -293,9 +299,6 @@ export default function RouteChart({ shipParams }) {
     } catch(e){ setGridError(e.message); }
     setGridLoading(false);
   };
-
-  // ── Total forecast hours available ──
-  const maxHourIdx = marineGrid?.results?.find(r=>r.times)?.times?.length ?? 168;
 
   // ── Computed voyage summary ──
   const eosp = voyageWPs?.[voyageWPs.length-1];
