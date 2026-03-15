@@ -148,16 +148,24 @@ function renderMeteoCanvas(canvas, gridData, bounds, map, mode, shipParams) {
   // ── Render smooth gradient ──
   const pixNW = map.latLngToContainerPoint([north, west]);
   const pixSE = map.latLngToContainerPoint([south, east]);
-  const gx = pixNW.x, gy = pixNW.y;
-  const gw = pixSE.x - pixNW.x, gh = pixSE.y - pixNW.y;
-  if (gw <= 0 || gh <= 0) return;
+  // Clamp to canvas bounds
+  const gx = Math.max(0, Math.floor(pixNW.x));
+  const gy = Math.max(0, Math.floor(pixNW.y));
+  const gx2 = Math.min(w, Math.ceil(pixSE.x));
+  const gy2 = Math.min(h, Math.ceil(pixSE.y));
+  const gw = gx2 - gx, gh = gy2 - gy;
+  if (gw <= 2 || gh <= 2) return;
 
-  const imgData = ctx.createImageData(Math.ceil(gw), Math.ceil(gh));
+  const imgData = ctx.createImageData(gw, gh);
+  // Map from full (unclamped) pixel extent to grid coordinates
+  const fullW = pixSE.x - pixNW.x, fullH = pixSE.y - pixNW.y;
+  if (fullW <= 0 || fullH <= 0) return;
   const superSample = 1; // increase for smoother but slower
   for (let py = 0; py < imgData.height; py++) {
     for (let px = 0; px < imgData.width; px++) {
-      const gridY = (py / imgData.height) * (rows - 1);
-      const gridX = (px / imgData.width) * (cols - 1);
+      // Convert clamped pixel back to grid coords via the full unclamped extent
+      const gridY = ((gy + py - pixNW.y) / fullH) * (rows - 1);
+      const gridX = ((gx + px - pixNW.x) / fullW) * (cols - 1);
       const val = bilinearInterpolate(grid, rows, cols, gridY, gridX);
       const [r, g, b] = lerpColor(stops, val);
       const idx = (py * imgData.width + px) * 4;
@@ -183,10 +191,10 @@ function renderMeteoCanvas(canvas, gridData, bounds, map, mode, shipParams) {
     ctx.strokeStyle = lineColor;
     ctx.beginPath();
     for (const [p0, p1] of segments) {
-      const sx = gx + (p0.x / (cols - 1)) * gw;
-      const sy = gy + (p0.y / (rows - 1)) * gh;
-      const ex = gx + (p1.x / (cols - 1)) * gw;
-      const ey = gy + (p1.y / (rows - 1)) * gh;
+      const sx = pixNW.x + (p0.x / (cols - 1)) * fullW;
+      const sy = pixNW.y + (p0.y / (rows - 1)) * fullH;
+      const ex = pixNW.x + (p1.x / (cols - 1)) * fullW;
+      const ey = pixNW.y + (p1.y / (rows - 1)) * fullH;
       ctx.moveTo(sx, sy);
       ctx.lineTo(ex, ey);
     }
@@ -197,8 +205,8 @@ function renderMeteoCanvas(canvas, gridData, bounds, map, mode, shipParams) {
     const labelInterval = Math.max(1, Math.floor(segments.length / 5));
     for (let si = 0; si < segments.length; si += labelInterval) {
       const [p0, p1] = segments[si];
-      const lx = gx + (((p0.x + p1.x) / 2) / (cols - 1)) * gw;
-      const ly = gy + (((p0.y + p1.y) / 2) / (rows - 1)) * gh;
+      const lx = pixNW.x + (((p0.x + p1.x) / 2) / (cols - 1)) * fullW;
+      const ly = pixNW.y + (((p0.y + p1.y) / 2) / (rows - 1)) * fullH;
       // Label background
       const tm = ctx.measureText(labelText);
       ctx.fillStyle = "rgba(15,23,42,0.8)";
@@ -216,8 +224,8 @@ function renderMeteoCanvas(canvas, gridData, bounds, map, mode, shipParams) {
     for (let c = 0; c < cols; c++) {
       const dir = dirGrid[r]?.[c];
       if (dir == null) continue;
-      const px = gx + (c / Math.max(1, cols - 1)) * gw;
-      const py = gy + (r / Math.max(1, rows - 1)) * gh;
+      const px = pixNW.x + (c / Math.max(1, cols - 1)) * fullW;
+      const py = pixNW.y + (r / Math.max(1, rows - 1)) * fullH;
       const rad = (dir - 90) * Math.PI / 180;
       const len = 14;
       const ex = px + len * Math.cos(rad), ey = py + len * Math.sin(rad);
@@ -240,7 +248,8 @@ export default function MeteoCanvasOverlay({ gridData, mode, shipParams }) {
   useEffect(() => {
     if (!map || !gridData) return;
 
-    // Create or get canvas pane
+    // Place canvas directly on map container (NOT inside map-pane)
+    // This way latLngToContainerPoint gives correct pixel coords with no transform issues
     let canvas = canvasRef.current;
     if (!canvas) {
       canvas = document.createElement("canvas");
@@ -248,29 +257,17 @@ export default function MeteoCanvasOverlay({ gridData, mode, shipParams }) {
       canvas.style.top = "0";
       canvas.style.left = "0";
       canvas.style.pointerEvents = "none";
-      canvas.style.zIndex = "450"; // above tiles, below markers
-      map.getContainer().querySelector(".leaflet-map-pane").appendChild(canvas);
+      canvas.style.zIndex = "450";
+      map.getContainer().appendChild(canvas);
       canvasRef.current = canvas;
     }
 
-    const resize = () => {
+    const redraw = () => {
       const size = map.getSize();
       canvas.width = size.x;
       canvas.height = size.y;
-    };
-
-    const redraw = () => {
-      resize();
-      // Sync canvas position with map pane transform
-      const pane = map.getPane("mapPane");
-      if (pane) {
-        const transform = pane.style.transform;
-        // Invert the map pane transform so canvas stays fixed to viewport
-        const match = transform.match(/translate3d\((.+?)px,\s*(.+?)px/);
-        if (match) {
-          canvas.style.transform = `translate3d(${-parseFloat(match[1])}px, ${-parseFloat(match[2])}px, 0)`;
-        }
-      }
+      canvas.style.width = size.x + "px";
+      canvas.style.height = size.y + "px";
       renderMeteoCanvas(canvas, gridData, gridData.bounds, map, mode, shipParams);
     };
 
@@ -286,7 +283,6 @@ export default function MeteoCanvasOverlay({ gridData, mode, shipParams }) {
     };
   }, [map, gridData, mode, shipParams]);
 
-  // Cleanup canvas on unmount
   useEffect(() => {
     return () => {
       if (canvasRef.current) {
