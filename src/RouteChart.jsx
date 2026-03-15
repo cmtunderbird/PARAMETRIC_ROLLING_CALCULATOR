@@ -170,6 +170,7 @@ export default function RouteChart({ shipParams }) {
   const [showSeaGrid, setShowSeaGrid] = useState(true);
   const mapRef = useRef(null);
   const fileInputRef = useRef(null);
+  const anyFetching = weatherLoading || seaGridLoading; // rate limit coordination
 
   // Compute stats when route changes
   useEffect(() => {
@@ -305,8 +306,8 @@ export default function RouteChart({ shipParams }) {
             {sectionHeader("Route Weather")}
             <label style={labelStyle}>Sample Interval (NM)</label>
             <input type="number" value={sampleInterval} min={25} max={500} step={25} onChange={(e) => setSampleInterval(parseInt(e.target.value) || 100)} style={{ ...inputStyle, marginBottom: 8 }} />
-            <button onClick={fetchRouteWeather} disabled={weatherLoading} style={{ ...btnStyle, width: "100%", background: weatherLoading ? "#334155" : "linear-gradient(90deg, #F59E0B, #D97706)", color: "#0F172A" }}>
-              {weatherLoading ? "FETCHING..." : `⟳ FETCH WEATHER (${generateWeatherSamplePoints(route.waypoints, sampleInterval).length} pts)`}
+            <button onClick={fetchRouteWeather} disabled={anyFetching} style={{ ...btnStyle, width: "100%", background: anyFetching ? "#334155" : "linear-gradient(90deg, #F59E0B, #D97706)", color: "#0F172A" }}>
+              {weatherLoading ? "FETCHING..." : seaGridLoading ? "WAIT — GRID LOADING..." : `⟳ FETCH WEATHER (${generateWeatherSamplePoints(route.waypoints, sampleInterval).length} pts)`}
             </button>
             {weatherError && <div style={{ color: "#EF4444", fontSize: 10, marginTop: 6 }}>{weatherError}</div>}
             <label style={{ display: "flex", alignItems: "center", gap: 6, marginTop: 8, cursor: "pointer" }}>
@@ -335,8 +336,8 @@ export default function RouteChart({ shipParams }) {
             <option value="wavePeriod">Wave Period (Tw)</option>
             <option value="risk">Parametric Roll Risk</option>
           </select>
-          <button onClick={fetchSeaGridWeather} disabled={seaGridLoading} style={{ ...btnStyle, width: "100%", background: seaGridLoading ? "#334155" : "linear-gradient(90deg, #22D3EE, #3B82F6)", color: "#0F172A" }}>
-            {seaGridLoading ? "FETCHING GRID..." : "🌊 FETCH SEA WEATHER"}
+          <button onClick={fetchSeaGridWeather} disabled={anyFetching} style={{ ...btnStyle, width: "100%", background: anyFetching ? "#334155" : "linear-gradient(90deg, #22D3EE, #3B82F6)", color: "#0F172A" }}>
+            {seaGridLoading ? "FETCHING GRID..." : weatherLoading ? "WAIT — ROUTE LOADING..." : "🌊 FETCH SEA WEATHER"}
           </button>
           {seaGridError && <div style={{ color: "#EF4444", fontSize: 10, marginTop: 6 }}>{seaGridError}</div>}
           {seaGrid && <div style={{ color: "#64748B", fontSize: 9, marginTop: 6 }}>{seaGrid.results.length} grid points fetched</div>}
