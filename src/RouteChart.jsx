@@ -66,7 +66,7 @@ async function fetchGridWeather(bounds, gridRes = 2.0) {
     const url = `https://marine-api.open-meteo.com/v1/marine?latitude=${latStr}&longitude=${lonStr}&hourly=wave_height,wave_direction,wave_period,swell_wave_height,swell_wave_period,swell_wave_direction&forecast_days=1&timeformat=unixtime`;
     try {
       const resp = await fetch(url);
-      if (!resp.ok) continue;
+      if (!resp.ok) { batch.forEach(p => results.push({ ...p, weather: null, error: `HTTP ${resp.status}` })); continue; }
       const data = await resp.json();
       // Multi-point returns array; single returns object
       const arr = Array.isArray(data) ? data : [data];
