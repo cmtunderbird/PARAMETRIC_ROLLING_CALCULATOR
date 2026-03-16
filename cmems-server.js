@@ -31,7 +31,9 @@ let workerReady = false;  // true once "{"ready":true}" received from worker
 const pending   = [];     // queue of { resolve, reject, timer } waiting for a response
 
 function spawnWorker() {
-  const workerPath = path.join(__dirname, "cmems_worker.py");
+  // Resolve worker path: packaged Electron app puts extraResources in resourcesPath
+  const workerPath = process.env.CMEMS_WORKER_PATH
+    || path.join(__dirname, "cmems_worker.py");
   worker = spawn("python", [workerPath], { stdio: ["pipe","pipe","pipe"] });
   workerReady = false;
 
