@@ -1,0 +1,40 @@
+fix: replace HTTP health probe with in-memory flag + push event
+
+Root cause of all "server not running" errors:
+The cmems:alive IPC handler was making an http.get() to localhost:5174
+to check if the server was ready. This HTTP request was unreliable due to
+Windows loopback restrictions, Windows Defender, or timing — even though
+the server was running perfectly.
+
+The main process already KNOWS the server is ready because it reads the
+child process stdout. There is no need to make an HTTP request at all.
+
+electron/main.js:
+  - Added `let cmemsReady = false` flag
+  - stdout handler: when text includes "CMEMS proxy server running",
+    sets cmemsReady=true, logs "[cmems] server ready flag set", and
+    pushes 'cmems:ready' event to renderer via webContents.send()
+  - exit handler: resets cmemsReady=false when server stops
+  - cmems:alive IPC handler now just returns `cmemsReady` — zero HTTP
+  - Removed the http.get() health probe entirely from cmems:alive
+  - http module still imported for cmems:fetch (actual data requests)
+
+electron/preload.js:
+  - Added onCmemsReady(cb): ipcRenderer.once('cmems:ready', cb)
+    Renderer can register a one-shot callback that fires the instant
+    the main process confirms the server is up
+
+src/cmemsProvider.js:
+  - serverAlive() completely rewritten with three-tier strategy:
+    1. Fast path: checkServerAlive() IPC returns true immediately if
+       server was already running before the button was clicked
+    2. Event path: onCmemsReady push event fires the instant stdout
+       says "running" — no polling delay at all
+    3. Polling fallback: checks flag every 500ms as belt-and-suspenders
+    4. Hard timeout: 30s (up from 15s) before giving up
+    5. Browser dev path: direct fetch to /api/cmems/health unchanged
+
+Verified via launch.bat:
+  [cmems] CMEMS proxy server running on http://localhost:5174
+  [cmems] server ready flag set        ← new line confirms flag works
+  [cmems] CMEMS worker ready

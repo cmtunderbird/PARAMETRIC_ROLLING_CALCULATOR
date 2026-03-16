@@ -57,9 +57,8 @@ const gotLock = app.requestSingleInstanceLock();
 if (!gotLock) { app.quit(); process.exit(0); }
 
 // ── CMEMS server child process ─────────────────────────────────────────────
-// In dev: runs from project root using local node
-// In packaged app: uses the bundled node_modules
 let cmemsServer = null;
+let cmemsReady  = false;   // set true when stdout says "running", never via HTTP
 
 function startCmemsServer() {
   const serverPath = isPacked
@@ -99,6 +98,13 @@ function startCmemsServer() {
   cmemsServer.stdout.on('data', d => {
     const t = d.toString().trim();
     if (t) console.log('[cmems]', t);
+    // Mark ready as soon as Express is bound — no HTTP probe needed
+    if (!cmemsReady && t.includes('CMEMS proxy server running')) {
+      cmemsReady = true;
+      console.log('[cmems] server ready flag set');
+      // Push notification to renderer so it stops waiting immediately
+      mainWindow?.webContents.send('cmems:ready');
+    }
   });
   cmemsServer.stderr.on('data', d => {
     const t = d.toString();
@@ -107,6 +113,7 @@ function startCmemsServer() {
   });
   cmemsServer.on('exit', (code, signal) => {
     console.log(`[cmems] server exited (code=${code} signal=${signal})`);
+    cmemsReady  = false;
     cmemsServer = null;
   });
 }
@@ -199,17 +206,10 @@ ipcMain.handle('cmems:fetch', (_, { url, method = 'GET', headers = {}, body }) =
   });
 });
 
-// ── CMEMS health alias ─────────────────────────────────────────────────────
-ipcMain.handle('cmems:alive', async () => {
-  return new Promise((resolve) => {
-    const req = http.get('http://localhost:5174/api/cmems/health', { timeout: 5000 }, (res) => {
-      resolve(res.statusCode === 200);
-      res.resume();
-    });
-    req.on('error', () => resolve(false));
-    req.on('timeout', () => { req.destroy(); resolve(false); });
-  });
-});
+// ── Server readiness check — uses in-memory flag, NOT an HTTP probe ────────
+// The main process sets cmemsReady=true the moment stdout says "running".
+// No HTTP request means no firewall / loopback / timing issues.
+ipcMain.handle('cmems:alive', () => cmemsReady);
 let mainWindow = null;
 
 function createWindow() {

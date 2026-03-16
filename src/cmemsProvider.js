@@ -47,26 +47,48 @@ async function cmemsFetch(url, headers = {}) {
 }
 
 // ─── Server health check ──────────────────────────────────────────────────────
-// Retries for up to 15 s to handle the startup race after a system restart:
-// cmems-server.js takes 3-8 s to start (Node boot + Python worker init).
-// In Electron: main process does the http.get() via IPC (no file:// restriction)
-// In browser:  direct fetch via Vite proxy
+// Strategy (Electron): the main process tracks a cmemsReady flag via stdout.
+//   - If already ready (server was up before button click): IPC returns true instantly.
+//   - If not ready yet: wait for the 'cmems:ready' push event (up to 30 s),
+//     OR fall back to polling the flag every 500 ms.
+// Strategy (browser dev): direct fetch to /api/cmems/health via Vite proxy.
 async function serverAlive() {
-  const MAX = 10, DELAY = 1500;          // 10 × 1.5 s = 15 s total budget
-  for (let i = 0; i < MAX; i++) {
+  if (typeof window === 'undefined') return false;
+
+  // ── Electron path ─────────────────────────────────────────────────────────
+  if (window.electronAPI?.checkServerAlive) {
+    // 1. Fast path: flag already set (server was running before click)
     try {
-      let ok = false;
-      if (typeof window !== 'undefined' && window.electronAPI?.checkServerAlive) {
-        ok = await window.electronAPI.checkServerAlive();
-      } else {
-        const r = await fetch(`${cmemsBase()}/health`, { signal: AbortSignal.timeout(5000) });
-        ok = r.ok;
+      if (await window.electronAPI.checkServerAlive()) return true;
+    } catch { /* ignore */ }
+
+    // 2. Wait for push event OR poll flag — whichever fires first (30 s max)
+    return new Promise((resolve) => {
+      let done = false;
+      const finish = (val) => { if (!done) { done = true; clearInterval(poll); resolve(val); } };
+
+      // Push event: main process fires the instant stdout says "running"
+      if (window.electronAPI.onCmemsReady) {
+        window.electronAPI.onCmemsReady(() => finish(true));
       }
-      if (ok) return true;
-    } catch { /* server not up yet — retry */ }
-    if (i < MAX - 1) await new Promise(r => setTimeout(r, DELAY));
+
+      // Polling fallback: check flag every 500 ms
+      const poll = setInterval(async () => {
+        try {
+          if (await window.electronAPI.checkServerAlive()) finish(true);
+        } catch { /* ignore */ }
+      }, 500);
+
+      // Hard timeout after 30 s
+      setTimeout(() => finish(false), 30000);
+    });
   }
-  return false;
+
+  // ── Browser dev path ──────────────────────────────────────────────────────
+  try {
+    const r = await fetch(`${cmemsBase()}/health`, { signal: AbortSignal.timeout(5000) });
+    return r.ok;
+  } catch { return false; }
 }
 
 // ─── Connection test ──────────────────────────────────────────────────────────
