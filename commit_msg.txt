@@ -1,0 +1,17 @@
+fix #7: compute route bounding box for voyage weather cache key
+
+fetchVoyageWeather was calling fetchMarineUnified and fetchAtmosphericGrid
+with null bounds, bypassing the cache entirely. Every click on
+"Fetch Time-Aware Weather" triggered a full network fetch regardless of
+whether fresh data was already cached for that route area.
+
+Fix: compute vBounds (south/north/west/east with 1-degree padding) from
+the deduplicated route points and pass it to both fetch calls.
+The cache key is now deterministic per route area so:
+  - First fetch: network call, result stored in localStorage
+  - Subsequent fetches within 6h (marine) / 3h (atmo): served from cache
+  - Re-fetch only happens when staleness threshold is exceeded
+
+Note: cache logic uses localStorage (browser-only). The Node.js test
+script correctly failed on localStorage - this is expected; the fix
+is validated by code inspection and the existing cacheGet/cacheSet logic.

@@ -266,9 +266,17 @@ export default function RouteChart({ shipParams }) {
       const uniq=[], seen=new Set();
       for (const p of ptsWithETA){ const k=`${p.lat.toFixed(1)},${p.lon.toFixed(1)}`; if(!seen.has(k)){seen.add(k);uniq.push(p);} }
 
+      // Bounding box of the route — used as cache key so repeated fetches are served from cache
+      const vBounds = {
+        south: Math.floor(Math.min(...uniq.map(p=>p.lat)) - 1),
+        north: Math.ceil( Math.max(...uniq.map(p=>p.lat)) + 1),
+        west:  Math.floor(Math.min(...uniq.map(p=>p.lon)) - 1),
+        east:  Math.ceil( Math.max(...uniq.map(p=>p.lon)) + 1),
+      };
+
       // Fetch 7-day forecasts — marine first, then atmospheric (sequential to avoid 429)
-      const marineRaw = await fetchMarineUnified(uniq, 7, null, 2.0, cmemsProvider, cmemsCredentials);
-      const atmoRaw   = await fetchAtmosphericGrid(uniq, 7, null, 2.0);
+      const marineRaw = await fetchMarineUnified(uniq, 7, vBounds, 2.0, cmemsProvider, cmemsCredentials);
+      const atmoRaw   = await fetchAtmosphericGrid(uniq, 7, vBounds, 2.0);
       const mResults  = Array.isArray(marineRaw) ? marineRaw : (marineRaw?.results ?? []);
       const aResults  = Array.isArray(atmoRaw)   ? atmoRaw   : (atmoRaw?.results   ?? []);
       const marineMap = new Map(mResults.map(r=>[`${r.lat.toFixed(1)},${r.lon.toFixed(1)}`,r]));
