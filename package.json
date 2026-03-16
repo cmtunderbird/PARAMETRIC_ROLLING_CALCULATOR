@@ -4,12 +4,16 @@
   "private": true,
   "description": "Professional mariner-standard parametric rolling calculator with live weather integration",
   "type": "module",
+  "main": "electron/main.js",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
     "cmems": "node cmems-server.js",
-    "start": "node cmems-server.js"
+    "electron:dev": "vite build && cross-env NODE_ENV=development electron .",
+    "electron:start": "cross-env NODE_ENV=production electron .",
+    "electron:pack": "vite build && electron-builder --dir",
+    "electron:dist": "vite build && electron-builder"
   },
   "dependencies": {
     "cors": "^2.8.6",
@@ -21,7 +25,51 @@
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.7.0",
+    "cross-env": "^7.0.3",
+    "electron": "^41.0.2",
+    "electron-builder": "^26.8.1",
     "vite": "^5.4.21"
+  },
+  "build": {
+    "appId": "com.maritime.parametric-rolling-calculator",
+    "productName": "Parametric Rolling Calculator",
+    "copyright": "IMO MSC.1/Circ.1228 Compliant",
+    "files": [
+      "dist/**/*",
+      "electron/**/*",
+      "cmems-server.js",
+      "cmems_worker.py",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "cmems_worker.py",
+        "to": "cmems_worker.py"
+      }
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "public/icon.ico"
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "installerIcon": "public/icon.ico",
+      "uninstallerIcon": "public/icon.ico",
+      "shortcutName": "Parametric Rolling Calculator"
+    },
+    "directories": {
+      "buildResources": "public",
+      "output": "release"
+    }
   },
   "keywords": [
     "parametric-rolling",
@@ -31,5 +79,5 @@
     "marine-weather"
   ],
   "license": "MIT",
-  "author": ""
+  "author": "Maritime Navigation Systems"
 }

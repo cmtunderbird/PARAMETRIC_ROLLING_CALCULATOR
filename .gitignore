@@ -1,5 +1,8 @@
 node_modules
 dist
+release
 .vite
 *.local
 .DS_Store
+public/icon.png
+public/icon.ico

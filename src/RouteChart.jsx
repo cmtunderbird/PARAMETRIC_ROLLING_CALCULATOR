@@ -171,8 +171,14 @@ export default function RouteChart({ shipParams }) {
   const [gridProgress, setGridProgress] = useState(null); // {step, done, total}
 
   // ── CMEMS provider state ──
-  const [cmemsUser,      setCmemsUser]      = useState(() => loadCmemsCredentials().user);
-  const [cmemsPass,      setCmemsPass]      = useState(() => loadCmemsCredentials().pass);
+  const [cmemsUser,      setCmemsUser]      = useState("");
+  const [cmemsPass,      setCmemsPass]      = useState("");
+  // Load persisted credentials on mount (Electron: OS keychain; browser: sessionStorage)
+  useEffect(() => {
+    loadCmemsCredentials().then(({ user, pass }) => {
+      setCmemsUser(user); setCmemsPass(pass);
+    });
+  }, []);
   const [cmemsProvider,  setCmemsProvider]  = useState("auto");   // "openmeteo" | "cmems" | "auto"
   const [cmemsTestMsg,   setCmemsTestMsg]   = useState(null);
   const [cmemsTestOk,    setCmemsTestOk]    = useState(null);

@@ -14,7 +14,12 @@
 //   Wave:    cmems_mod_glo_wav_anfc_0.083deg_PT3H-i
 //   Physics: cmems_mod_glo_phy_anfc_0.083deg_PT1H-m
 
-const CMEMS_BASE = "/api/cmems";
+// ── API base: Vite proxy in browser dev, direct port in Electron production ───
+// In dev (browser):  /api/cmems  → Vite proxy → localhost:5174
+// In Electron:       http://localhost:5174/api/cmems  (no proxy layer needed)
+const CMEMS_BASE = (typeof window !== 'undefined' && window.electronAPI?.isElectron)
+  ? 'http://localhost:5174/api/cmems'
+  : '/api/cmems';
 
 export const CMEMS_WAVE_DATASET    = "cmems_mod_glo_wav_anfc_0.083deg_PT3H-i";
 export const CMEMS_PHYSICS_DATASET = "cmems_mod_glo_phy_anfc_0.083deg_PT1H-m";
@@ -93,16 +98,31 @@ export async function cmemsPhysicsGrid(user, pass, bounds, forecastDays = 2) {
   return resp.json();
 }
 
-// ─── Credentials helpers (sessionStorage — never persisted to disk) ───────────
-export function saveCmemsCredentials(user, pass) {
+// ─── Credentials helpers ─────────────────────────────────────────────────────
+// In Electron: persisted securely in OS keychain via safeStorage (survives restarts)
+// In browser:  stored in sessionStorage only (cleared on tab close)
+const isElectron = () => typeof window !== 'undefined' && window.electronAPI?.isElectron;
+
+export async function saveCmemsCredentials(user, pass) {
+  if (isElectron()) {
+    try { await window.electronAPI.credsSave(user, pass); return; } catch { /* fallback */ }
+  }
   try { sessionStorage.setItem("cmems_user", user); sessionStorage.setItem("cmems_pass", pass); }
   catch { /* ignore */ }
 }
-export function loadCmemsCredentials() {
+
+export async function loadCmemsCredentials() {
+  if (isElectron()) {
+    try { return await window.electronAPI.credsLoad(); } catch { /* fallback */ }
+  }
   try { return { user: sessionStorage.getItem("cmems_user")||"", pass: sessionStorage.getItem("cmems_pass")||"" }; }
   catch { return { user: "", pass: "" }; }
 }
-export function clearCmemsCredentials() {
+
+export async function clearCmemsCredentials() {
+  if (isElectron()) {
+    try { await window.electronAPI.credsClear(); return; } catch { /* fallback */ }
+  }
   try { sessionStorage.removeItem("cmems_user"); sessionStorage.removeItem("cmems_pass"); } catch { /* ignore */ }
 }
 
