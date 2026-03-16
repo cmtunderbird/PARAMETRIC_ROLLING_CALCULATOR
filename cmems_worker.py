@@ -36,16 +36,20 @@ def arr_clean(a, decimals=3):
 
 def handle_test(cmd):
     user, password = cmd["user"], cmd["password"]
-    import copernicusmarine
-    os.environ["COPERNICUSMARINE_SERVICE_USERNAME"] = user
-    os.environ["COPERNICUSMARINE_SERVICE_PASSWORD"] = password
-    ds = open_ds("cmems_mod_glo_wav_anfc_0.083deg_PT3H-i", user, password)
-    sub = ds["VHM0"].sel(
-        latitude=slice(37.9, 38.1), longitude=slice(-28.1, -27.9)
-    ).isel(time=0)
-    v = float(sub.values.flat[0])
-    return {"ok": True, "hs": round(v, 2),
-            "message": f"Connected — test Hs = {round(v,2)} m at 38\u00b0N 28\u00b0W"}
+    import copernicusmarine, time
+    t0 = time.time()
+    # Use login(check_credentials_valid=True) — only hits the auth server,
+    # no dataset open and no data download. ~3s vs ~60s for open_dataset.
+    valid = copernicusmarine.login(
+        username=user,
+        password=password,
+        check_credentials_valid=True,
+        force_overwrite=False,
+    )
+    elapsed = round(time.time() - t0, 1)
+    if not valid:
+        return {"ok": False, "message": "Invalid credentials — check username and password."}
+    return {"ok": True, "message": f"\u2713 CMEMS credentials valid ({elapsed}s)"}
 
 def handle_wave(cmd):
     user, password = cmd["user"], cmd["password"]

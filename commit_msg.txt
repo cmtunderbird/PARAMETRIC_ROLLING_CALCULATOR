@@ -1,47 +1,13 @@
-fix #1,2,3,5,11,12,13,14,15,16,17,18,19: full minor issues batch
+perf: replace slow dataset-open test with lightweight credential check
 
-physics.js (#1):
-  calcEncounterPeriod rewritten using Te = |Tw / (1 - V*cosA/Vw)| form
-  Proper wave-celerity check avoids surf-riding singularity
-  Te capped at 200s (no practical parametric resonance beyond that)
-  omega_e floor replaced with 2*pi/200 rad/s (was arbitrary 0.01)
-  makeSeakeepingSpecs unexported (#11) — internal only, never imported
+Previously handle_test() called open_dataset() + .values to fetch actual
+wave data just to verify credentials — took 30-60s on first call.
 
-MeteoOverlay.jsx (#5):
-  renderSynopticImage: dead atmoGrid parameter removed from signature
-  and from the one call site — atmo rendered separately by component
+Fix: use copernicusmarine.login(check_credentials_valid=True) which only
+hits the auth server and returns a bool — no dataset open, no data download.
 
-ShipDashboard.jsx (#2, #12):
-  Dead `back = vecPt(bearing+180, 8)` variable removed (#2)
-  Unused `useState` removed from import (#12)
+Measured: 3.3s Python auth + ~5s first-call worker overhead = ~8s total.
+Was: 60+ seconds. 7-10x faster for the connection test.
 
-weatherApi.js (#14):
-  snapshotAt unexported — internal helper only, never called externally
-
-cmemsProvider.js (#15):
-  Dead comment about cmemsAuthHeader cleaned up
-
-RouteParser.js (#16):
-  generateWeatherSamplePoints: flat lat/lon lerp replaced with
-  great-circle slerp (spherical linear interpolation) for accuracy
-  on long legs (up to 0.3% error on 600 NM legs with old approach)
-
-weatherCache.js (#3):
-  cacheStatus: snapshot keys array before iterating to prevent
-  index-shifting if evictOldEntries fires during the loop
-
-RouteChart.jsx (#13):
-  Removed 5 import-only unused symbols:
-  snapshotAt, getSafetyCostFactor, getRiskLevel,
-  calcParametricRiskRatio, calcEncounterPeriod, fetchMarineGrid
-
-cmems-server.js (#18):
-  Per-request timeout middleware: 130s (covers worst-case first open)
-  Returns 503 JSON if worker doesn't respond in time
-
-package.json (#19):
-  "start" script: removed bash-only & operator — now just node cmems-server.js
-  Windows cmd does not support & for background processes
-
-vite.config.js (#17):
-  Added clear NOTE comment: proxy is dev-only, dist/ build has no proxy
+Credentials are passed directly to login(), never written to disk
+(force_overwrite=False ensures ~/.copernicusmarine is not modified).
