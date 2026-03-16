@@ -70,6 +70,39 @@ const bospIcon = makeWpIcon("#16A34A","▶",32);
 const eospIcon = makeWpIcon("#DC2626","■",32);
 const riskIcon = (severity, label) => makeWpIcon(riskColor(severity), label, 22);
 
+// ─── Draggable marker for WP editor ──────────────────────────────────────────
+function DraggableWpMarker({ wp, idx, onMove }) {
+  const markerRef = useRef(null);
+  const icon = L.divIcon({
+    className:"", iconSize:[22,22], iconAnchor:[11,11],
+    html:`<div style="width:22px;height:22px;border-radius:50%;background:#F59E0B;
+      border:2px solid #fff;display:flex;align-items:center;justify-content:center;
+      font-size:8px;font-weight:900;color:#0F172A;cursor:grab;
+      box-shadow:0 2px 8px rgba(0,0,0,0.6)">${idx+1}</div>`,
+  });
+  return (
+    <Marker
+      ref={markerRef}
+      position={[wp.lat, wp.lon]}
+      icon={icon}
+      draggable={true}
+      eventHandlers={{
+        dragend: e => {
+          const { lat, lng } = e.target.getLatLng();
+          onMove(idx, parseFloat(lat.toFixed(5)), parseFloat(lng.toFixed(5)));
+        }
+      }}
+    >
+      <Tooltip direction="top" offset={[0,-12]}>
+        <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10}}>
+          {wp.name||`WP${idx+1}`}<br/>
+          {wp.lat.toFixed(4)}°, {wp.lon.toFixed(4)}°
+        </span>
+      </Tooltip>
+    </Marker>
+  );
+}
+
 // ─── Waypoint popup ──────────────────────────────────────────────────────────
 function WpPopup({ wp, shipParams }) {
   const w = wp.weather;
@@ -111,6 +144,9 @@ export default function RouteChart({ shipParams }) {
   const [routeStats, setRouteStats] = useState(null);
   const [parseError, setParseError] = useState(null);
   const [fileName, setFileName]     = useState(null);
+  const [editMode,   setEditMode]   = useState(false);   // WP editor open
+  const [editingIdx, setEditingIdx] = useState(null);    // which WP is being edited inline
+  const [editForm,   setEditForm]   = useState({});      // {name,lat,lon} of row being edited
 
   // ── BOSP / EOSP ──
   const nowLocal = () => { const d=new Date(); d.setSeconds(0,0); return d.toISOString().slice(0,16); };
@@ -228,6 +264,54 @@ export default function RouteChart({ shipParams }) {
   },[]);
 
   const loadDemo = ()=>{ try{ setRoute(autoDetectAndParse(generateSampleRTZ(),"demo.rtz")); setFileName("N.Atlantic_Demo.rtz"); } catch(e){ setParseError(e.message); } };
+
+  // ── Waypoint mutation helpers ─────────────────────────────────────────────
+  const mutateWps = (newWps) => {
+    if (newWps.length < 2) return; // always keep at least 2
+    const renumbered = newWps.map((w,i) => ({
+      ...w, id: String(i+1),
+      name: w.name || `WP${String(i+1).padStart(3,"0")}`,
+    }));
+    setRoute(r => ({ ...r, waypoints: renumbered }));
+    setVoyageWPs(null); setVoyageWeather(null);
+    setShipPos(null); setShipWx(null); setShipMotion(null); setShipMStat(null);
+    setEditingIdx(null);
+  };
+
+  const wpDelete = (idx) => {
+    if (!route?.waypoints || route.waypoints.length <= 2) return;
+    mutateWps(route.waypoints.filter((_,i) => i !== idx));
+  };
+
+  const wpInsertAfter = (idx) => {
+    const wps = route.waypoints;
+    const a = wps[idx], b = wps[idx+1] || a;
+    const midLat = parseFloat(((a.lat+b.lat)/2).toFixed(5));
+    const midLon = parseFloat(((a.lon+b.lon)/2).toFixed(5));
+    const newWp = { id:"", name:"", lat:midLat, lon:midLon, speed:a.speed||null };
+    const next = [...wps.slice(0,idx+1), newWp, ...wps.slice(idx+1)];
+    mutateWps(next);
+    setEditingIdx(idx+1);
+    setEditForm({ name:"", lat:midLat.toFixed(5), lon:midLon.toFixed(5) });
+  };
+
+  const wpMove = (idx, lat, lon) => {
+    const wps = [...route.waypoints];
+    wps[idx] = { ...wps[idx], lat, lon };
+    mutateWps(wps);
+  };
+
+  const wpSaveEdit = (idx) => {
+    const wps = [...route.waypoints];
+    const lat = parseFloat(editForm.lat);
+    const lon = parseFloat(editForm.lon);
+    if (isNaN(lat)||isNaN(lon)||lat<-90||lat>90||lon<-180||lon>180) return;
+    wps[idx] = { ...wps[idx], name: editForm.name||wps[idx].name, lat, lon };
+    mutateWps(wps);
+  };
+
+  const wpMoveUp   = (idx) => { if(idx<1) return; const w=[...route.waypoints]; [w[idx-1],w[idx]]=[w[idx],w[idx-1]]; mutateWps(w); };
+  const wpMoveDown = (idx) => { if(idx>=route.waypoints.length-1) return; const w=[...route.waypoints]; [w[idx],w[idx+1]]=[w[idx+1],w[idx]]; mutateWps(w); };
 
   // ── Step 1: Calculate voyage ETAs ──
   const calcVoyage = () => {
@@ -401,6 +485,131 @@ export default function RouteChart({ shipParams }) {
           </button>
           {parseError&&<div style={{color:"#EF4444",fontSize:10,marginTop:6,padding:6,background:"#7F1D1D20",borderRadius:4}}>{parseError}</div>}
         </Panel>
+
+        {/* ── Waypoint Editor ─────────────────────────────────────────────── */}
+        {route && (
+          <Panel style={{padding:editMode?12:10}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:editMode?10:0}}>
+              <div style={{color:"#F59E0B",fontSize:11,fontWeight:700,letterSpacing:"0.12em",textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>
+                ✏️ Route Editor
+                <span style={{color:"#64748B",fontSize:9,fontWeight:400,marginLeft:8}}>{route.waypoints.length} WPs</span>
+              </div>
+              <button onClick={()=>{ setEditMode(m=>!m); setEditingIdx(null); }}
+                style={{...btnSt,padding:"4px 10px",fontSize:10,
+                  background:editMode?"linear-gradient(90deg,#7C3AED,#6D28D9)":"linear-gradient(90deg,#334155,#475569)",
+                  color:"#E2E8F0"}}>
+                {editMode ? "✓ DONE" : "✏ EDIT"}
+              </button>
+            </div>
+
+            {editMode && (
+              <div style={{maxHeight:320,overflowY:"auto"}}>
+                {route.waypoints.map((wp, idx) => (
+                  <div key={idx}>
+                    {/* ── Row in view mode ── */}
+                    {editingIdx !== idx ? (
+                      <div style={{display:"flex",alignItems:"center",gap:4,padding:"4px 2px",
+                        borderBottom:"1px solid #1E293B",
+                        background: idx===0?"#16A34A0A": idx===route.waypoints.length-1?"#DC26260A":"transparent"}}>
+                        {/* WP number badge */}
+                        <div style={{minWidth:20,height:20,borderRadius:"50%",
+                          background:idx===0?"#16A34A":idx===route.waypoints.length-1?"#DC2626":"#475569",
+                          display:"flex",alignItems:"center",justifyContent:"center",
+                          fontSize:8,fontWeight:900,color:"#fff",flexShrink:0}}>{idx+1}</div>
+                        {/* Name + coords */}
+                        <div style={{flex:1,minWidth:0}}>
+                          <div style={{color:"#E2E8F0",fontSize:10,fontWeight:600,
+                            whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
+                            fontFamily:"'JetBrains Mono',monospace"}}>
+                            {wp.name||`WP${idx+1}`}
+                          </div>
+                          <div style={{color:"#64748B",fontSize:8,fontFamily:"'JetBrains Mono',monospace"}}>
+                            {wp.lat.toFixed(3)}°, {wp.lon.toFixed(3)}°
+                          </div>
+                        </div>
+                        {/* Action buttons */}
+                        <div style={{display:"flex",gap:2,flexShrink:0}}>
+                          {/* Move up */}
+                          <button onClick={()=>wpMoveUp(idx)} disabled={idx===0}
+                            title="Move up" style={{...btnSt,padding:"2px 5px",fontSize:10,
+                              background:"#0F172A",color:idx===0?"#334155":"#94A3B8",border:"1px solid #334155"}}>▲</button>
+                          {/* Move down */}
+                          <button onClick={()=>wpMoveDown(idx)} disabled={idx===route.waypoints.length-1}
+                            title="Move down" style={{...btnSt,padding:"2px 5px",fontSize:10,
+                              background:"#0F172A",color:idx===route.waypoints.length-1?"#334155":"#94A3B8",border:"1px solid #334155"}}>▼</button>
+                          {/* Edit */}
+                          <button onClick={()=>{ setEditingIdx(idx); setEditForm({name:wp.name||"",lat:String(wp.lat),lon:String(wp.lon)}); }}
+                            title="Edit" style={{...btnSt,padding:"2px 5px",fontSize:10,
+                              background:"#0F172A",color:"#F59E0B",border:"1px solid #F59E0B50"}}>✎</button>
+                          {/* Insert after */}
+                          <button onClick={()=>wpInsertAfter(idx)}
+                            title="Insert WP after" style={{...btnSt,padding:"2px 5px",fontSize:10,
+                              background:"#0F172A",color:"#22D3EE",border:"1px solid #22D3EE50"}}>+</button>
+                          {/* Delete */}
+                          <button onClick={()=>wpDelete(idx)} disabled={route.waypoints.length<=2}
+                            title="Delete" style={{...btnSt,padding:"2px 5px",fontSize:10,
+                              background:"#0F172A",color:route.waypoints.length<=2?"#334155":"#EF4444",
+                              border:`1px solid ${route.waypoints.length<=2?"#334155":"#EF444450"}`}}>✕</button>
+                        </div>
+                      </div>
+                    ) : (
+                      /* ── Row in edit mode ── */
+                      <div style={{background:"#0F172A",borderRadius:4,padding:8,marginBottom:4,
+                        border:"1px solid #F59E0B60"}}>
+                        <div style={{color:"#F59E0B",fontSize:9,fontWeight:700,marginBottom:6,
+                          fontFamily:"'JetBrains Mono',monospace"}}>EDITING WP {idx+1}</div>
+                        <div style={{display:"grid",gridTemplateColumns:"1fr",gap:4,marginBottom:6}}>
+                          <input value={editForm.name}
+                            onChange={e=>setEditForm(f=>({...f,name:e.target.value}))}
+                            placeholder={`WP name (e.g. BISHOP ROCK)`}
+                            style={{...inputSt,fontSize:11,padding:"4px 6px"}} />
+                          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
+                            <input value={editForm.lat}
+                              onChange={e=>setEditForm(f=>({...f,lat:e.target.value}))}
+                              placeholder="Latitude (°)"
+                              style={{...inputSt,fontSize:11,padding:"4px 6px",
+                                borderColor: isNaN(parseFloat(editForm.lat))?"#EF4444":"#334155"}} />
+                            <input value={editForm.lon}
+                              onChange={e=>setEditForm(f=>({...f,lon:e.target.value}))}
+                              placeholder="Longitude (°)"
+                              style={{...inputSt,fontSize:11,padding:"4px 6px",
+                                borderColor: isNaN(parseFloat(editForm.lon))?"#EF4444":"#334155"}} />
+                          </div>
+                        </div>
+                        <div style={{fontSize:8,color:"#64748B",marginBottom:6,fontFamily:"'JetBrains Mono',monospace"}}>
+                          Decimal degrees · N/E positive · S/W negative<br/>
+                          Or drag the 🟡 marker on the map to reposition
+                        </div>
+                        <div style={{display:"flex",gap:4}}>
+                          <button onClick={()=>wpSaveEdit(idx)}
+                            style={{...btnSt,flex:1,padding:"4px",fontSize:10,
+                              background:"linear-gradient(90deg,#16A34A,#15803D)",color:"#fff"}}>
+                            ✓ SAVE
+                          </button>
+                          <button onClick={()=>setEditingIdx(null)}
+                            style={{...btnSt,padding:"4px 8px",fontSize:10,
+                              background:"#334155",color:"#94A3B8"}}>
+                            ✕
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                ))}
+                {/* Add WP at end */}
+                <button onClick={()=>wpInsertAfter(route.waypoints.length-1)}
+                  style={{...btnSt,width:"100%",marginTop:6,padding:"5px",fontSize:10,
+                    background:"#0F172A",color:"#22D3EE",border:"1px dashed #22D3EE40"}}>
+                  + ADD WAYPOINT AT END
+                </button>
+                <div style={{color:"#475569",fontSize:8,marginTop:4,textAlign:"center",
+                  fontFamily:"'JetBrains Mono',monospace"}}>
+                  Drag 🟡 markers on map to reposition · Min 2 WPs required
+                </div>
+              </div>
+            )}
+          </Panel>
+        )}
 
         {/* BOSP / EOSP */}
         {route && <Panel>
@@ -831,6 +1040,11 @@ export default function RouteChart({ shipParams }) {
                 ? <ShipPositionLayer pos={displayPos} weather={displayWx} />
                 : null;
             })()}
+
+            {/* Draggable WP markers — only visible in edit mode */}
+            {editMode && route?.waypoints.map((wp, idx) => (
+              <DraggableWpMarker key={`drag-${idx}`} wp={wp} idx={idx} onMove={wpMove} />
+            ))}
 
             {/* BOSP marker */}
             {route && <Marker position={[route.waypoints[0].lat,route.waypoints[0].lon]} icon={bospIcon}>
