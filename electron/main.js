@@ -51,6 +51,7 @@ function startCmemsServer() {
     : 'node';
   const actualBin = (isPacked && !fs.existsSync(nodeBin)) ? 'node' : nodeBin;
 
+  console.log(`[cmems] spawning: ${actualBin} ${serverPath}`);
   cmemsServer = spawn(actualBin, [serverPath], {
     cwd: isPacked ? process.resourcesPath : ROOT,
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -67,6 +68,11 @@ function startCmemsServer() {
     },
   });
 
+  cmemsServer.on('error', (e) => {
+    console.error(`[cmems] spawn error: ${e.message}`);
+    console.error(`[cmems] tried binary: ${actualBin}`);
+    cmemsServer = null;
+  });
   cmemsServer.stdout.on('data', d => {
     const t = d.toString().trim();
     if (t) console.log('[cmems]', t);

@@ -47,25 +47,36 @@ async function cmemsFetch(url, headers = {}) {
 }
 
 // ─── Server health check ──────────────────────────────────────────────────────
+// Retries for up to 15 s to handle the startup race after a system restart:
+// cmems-server.js takes 3-8 s to start (Node boot + Python worker init).
 // In Electron: main process does the http.get() via IPC (no file:// restriction)
 // In browser:  direct fetch via Vite proxy
 async function serverAlive() {
-  try {
-    if (typeof window !== 'undefined' && window.electronAPI?.checkServerAlive) {
-      return await window.electronAPI.checkServerAlive();
-    }
-    const r = await fetch(`${cmemsBase()}/health`, { signal: AbortSignal.timeout(5000) });
-    return r.ok;
-  } catch { return false; }
+  const MAX = 10, DELAY = 1500;          // 10 × 1.5 s = 15 s total budget
+  for (let i = 0; i < MAX; i++) {
+    try {
+      let ok = false;
+      if (typeof window !== 'undefined' && window.electronAPI?.checkServerAlive) {
+        ok = await window.electronAPI.checkServerAlive();
+      } else {
+        const r = await fetch(`${cmemsBase()}/health`, { signal: AbortSignal.timeout(5000) });
+        ok = r.ok;
+      }
+      if (ok) return true;
+    } catch { /* server not up yet — retry */ }
+    if (i < MAX - 1) await new Promise(r => setTimeout(r, DELAY));
+  }
+  return false;
 }
 
 // ─── Connection test ──────────────────────────────────────────────────────────
 export async function testCmemsConnection(user, pass) {
   if (!user || !pass) return { ok: false, message: "Enter username and password first." };
+  // serverAlive() retries for up to 15 s — handles post-reboot startup lag
   const alive = await serverAlive();
   if (!alive) return {
     ok: false,
-    message: "❌ CMEMS server not running — launch via the desktop shortcut which starts it automatically.",
+    message: "❌ CMEMS server failed to start. Ensure Node.js is installed and launch via the desktop shortcut.",
   };
   try {
     return await cmemsFetch(`${cmemsBase()}/test`, { Authorization: authHeader(user, pass) });
