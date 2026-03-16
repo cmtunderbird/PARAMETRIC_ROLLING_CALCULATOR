@@ -6,19 +6,23 @@
 import { cacheGet, cacheSet } from "./weatherCache.js";
 import { cmemsWaveGrid, cmemsPhysicsGrid } from "./cmemsProvider.js";
 
-// ── Global semaphore — only 1 Open-Meteo request in flight at a time ──────────
-let _omBusy = false;
+// ── Global semaphore — max 2 Open-Meteo requests in flight at a time ─────────
+// 2-concurrent gives ~2x speed vs 1-concurrent while staying well within
+// free-tier rate limits (~80 req/min vs 40 req/min — limit is ~600/min).
+let _omActive = 0;
 const _omQueue = [];
+const OM_CONCURRENT = 2;
+
 function omAcquire() {
   return new Promise(resolve => {
-    if (!_omBusy) { _omBusy = true; resolve(); }
+    if (_omActive < OM_CONCURRENT) { _omActive++; resolve(); }
     else _omQueue.push(resolve);
   });
 }
 function omRelease() {
+  _omActive--;
   const next = _omQueue.shift();
-  if (next) next();
-  else _omBusy = false;
+  if (next) { _omActive++; next(); }
 }
 
 const delay = (ms) => new Promise(r => setTimeout(r, ms));

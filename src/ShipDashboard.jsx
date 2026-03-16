@@ -21,10 +21,12 @@ function bearingTo(lat1, lon1, lat2, lon2) {
   return (Math.atan2(x, y) * 180 / Math.PI + 360) % 360;
 }
 
-// ─── Interpolate current position along route ─────────────────────────────────
-export function calcCurrentPosition(voyageWPs) {
+// ─── Interpolate position along route ────────────────────────────────────────
+// atMs: optional — if provided uses that timestamp instead of Date.now()
+//        allows the forecast scrubber to drive the ship position
+export function calcCurrentPosition(voyageWPs, atMs = null) {
   if (!voyageWPs?.length) return null;
-  const nowMs = Date.now();
+  const nowMs = atMs ?? Date.now();
   const bospMs = voyageWPs[0].etaMs;
   const eospMs = voyageWPs[voyageWPs.length - 1].etaMs;
   if (nowMs < bospMs) return { status: "pre-departure", etaBosp: bospMs };

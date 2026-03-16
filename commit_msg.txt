@@ -1,13 +1,21 @@
-perf: replace slow dataset-open test with lightweight credential check
+feat: ship tracks forecast scrubber + 2x faster weather fetches
 
-Previously handle_test() called open_dataset() + .values to fetch actual
-wave data just to verify credentials — took 30-60s on first call.
+1. Ship pictogram advances with forecast scrubber (fix)
+   When synoptic chart is loaded, the vessel icon on the map is now
+   driven by the forecast time (baseMs + chartHourIdx * 3600000) instead
+   of Date.now(). As you play/scrub the 7-day forecast, the ship moves
+   along its planned route proportionally to its ETA schedule.
+   - ShipDashboard.jsx: calcCurrentPosition() accepts optional atMs param
+   - RouteChart.jsx: inline IIFE computes chartShipPos from chartTimeMs,
+     falls back to real-time shipPos when no synoptic chart is loaded
 
-Fix: use copernicusmarine.login(check_credentials_valid=True) which only
-hits the auth server and returns a bool — no dataset open, no data download.
+2. Synoptic chart fetch auto-scales grid resolution (perf)
+   fetchSeaOverlay() now auto-coarsens gridRes until point count ≤ 80:
+   80 pts → 8 batches → max 12s (was unbounded, could be 60+ s)
+   Progress label now shows effective resolution and point count.
+   Point cap error changed from 1500 to a gentler "Zoom in" message.
 
-Measured: 3.3s Python auth + ~5s first-call worker overhead = ~8s total.
-Was: 60+ seconds. 7-10x faster for the connection test.
-
-Credentials are passed directly to login(), never written to disk
-(force_overwrite=False ensures ~/.copernicusmarine is not modified).
+3. Open-Meteo semaphore upgraded from 1 to 2 concurrent (perf)
+   weatherApi.js: OM_CONCURRENT = 2 allows 2 parallel requests.
+   ~2x faster for voyage weather (marine + atmo overlap slightly).
+   Rate: ~80 req/min vs 40 req/min — still well within free-tier limit.

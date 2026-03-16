@@ -313,27 +313,36 @@ export default function RouteChart({ shipParams }) {
     try {
       const b = map.getBounds();
       const bounds = { south:b.getSouth(), north:b.getNorth(), west:b.getWest(), east:b.getEast() };
-      const { points, bounds:gb } = buildGridPoints(bounds, gridRes);
-      if (points.length > 1500) throw new Error(`Grid too large (${points.length} pts). Zoom in or use coarser resolution.`);
+
+      // ── Auto-scale resolution so we never exceed 80 points ───────────────
+      // 80 pts → 8 batches × 1.5s = 12s max; keeps fetches snappy at any zoom
+      let effectiveGridRes = gridRes;
+      let { points, bounds: gb } = buildGridPoints(bounds, effectiveGridRes);
+      while (points.length > 80 && effectiveGridRes < 8.0) {
+        effectiveGridRes = parseFloat((effectiveGridRes + 0.5).toFixed(1));
+        ({ points, bounds: gb } = buildGridPoints(bounds, effectiveGridRes));
+      }
+      if (points.length > 1500) throw new Error(`Grid too large (${points.length} pts). Zoom in.`);
+
       if (forceRefresh) {
-        cacheInvalidate("marine", gb, gridRes); cacheInvalidate("atmo", gb, gridRes);
+        cacheInvalidate("marine", gb, effectiveGridRes); cacheInvalidate("atmo", gb, effectiveGridRes);
         cacheInvalidate("marine_cmems", gb, 0.083); cacheInvalidate("physics_cmems", gb, 0.083);
       }
 
-      // ── Step 1: Marine (CMEMS or Open-Meteo) — sequential, NOT parallel ──
-      setGridProgress({ step:"Marine waves", done:0, total: Math.ceil(points.length/10) });
-      const mResult = await fetchMarineUnified(points, 7, gb, gridRes, cmemsProvider, cmemsCredentials,
-        (done,total) => setGridProgress({ step:"Marine waves", done, total }));
-      setMarineGrid({ results:mResult.results, gridRes, bounds:gb });
+      // ── Step 1: Marine ────────────────────────────────────────────────────
+      setGridProgress({ step:`Marine waves (${effectiveGridRes}° grid, ${points.length} pts)`, done:0, total: Math.ceil(points.length/10) });
+      const mResult = await fetchMarineUnified(points, 7, gb, effectiveGridRes, cmemsProvider, cmemsCredentials,
+        (done,total) => setGridProgress({ step:`Marine waves (${effectiveGridRes}° grid)`, done, total }));
+      setMarineGrid({ results:mResult.results, gridRes:effectiveGridRes, bounds:gb });
       setLastFetchSrc(mResult.fromCache ? "cache" : "network");
       setGridFetchedAt(mResult.fetchedAt);
 
-      // ── Step 2: Atmospheric (GFS) — after marine completes ──
+      // ── Step 2: Atmospheric ───────────────────────────────────────────────
       if (showAtmo) {
         setGridProgress({ step:"GFS wind + MSLP", done:0, total: Math.ceil(points.length/10) });
-        const aResult = await fetchAtmosphericGrid(points, 7, gb, gridRes,
+        const aResult = await fetchAtmosphericGrid(points, 7, gb, effectiveGridRes,
           (done,total) => setGridProgress({ step:"GFS wind + MSLP", done, total }));
-        setAtmoGrid({ results:aResult.results, gridRes, bounds:gb });
+        setAtmoGrid({ results:aResult.results, gridRes:effectiveGridRes, bounds:gb });
       } else { setAtmoGrid(null); }
 
       // ── Step 3: CMEMS Physics (currents + SST) — only if credentials present ──
@@ -659,7 +668,6 @@ export default function RouteChart({ shipParams }) {
         {marineGrid && (() => {
           const nowMs   = Date.now();
           const baseMs  = marineGrid.results.find(r=>r.times)?.[0] ? marineGrid.results.find(r=>r.times).times[0]*1000 : nowMs;
-          const totalH  = maxHourIdx;
           const curDate = new Date(baseMs + chartHourIdx * 3600000);
           const nowIdx  = Math.round((nowMs - baseMs) / 3600000);
           const cacheAgeMin = gridFetchedAt ? Math.round((nowMs - gridFetchedAt) / 60000) : null;
@@ -795,10 +803,32 @@ export default function RouteChart({ shipParams }) {
                 pathOptions={{color:"#F59E0B",weight:3,opacity:0.85,dashArray:"8,6"}} />
             )}
 
-            {/* Live ship position + vectors */}
-            {shipPos?.status === "underway" && (
-              <ShipPositionLayer pos={shipPos} weather={shipWx} />
-            )}
+            {/* Ship position on map:
+                • When synoptic chart is loaded, position is driven by the forecast
+                  scrubber — the vessel advances along the route as you play/scrub.
+                • When no chart is loaded, falls back to the real-time 30s-tick position. */}
+            {(() => {
+              const firstResult = marineGrid?.results?.find(r=>r.times);
+              const baseMs = firstResult ? firstResult.times[0]*1000 : Date.now();
+              const chartTimeMs = baseMs + chartHourIdx * 3600000;
+              // Ship position at the current forecast time
+              const chartShipPos = (showGrid && marineGrid && voyageWPs?.length)
+                ? calcCurrentPosition(voyageWPs, chartTimeMs)
+                : null;
+              // Nearest voyage-weather point to chart-time position
+              const chartShipWx = chartShipPos?.status === "underway" && voyageWeather?.length
+                ? voyageWeather.reduce((best, p) => {
+                    const d  = Math.hypot(p.lat - chartShipPos.lat, p.lon - chartShipPos.lon);
+                    const db = Math.hypot(best.lat - chartShipPos.lat, best.lon - chartShipPos.lon);
+                    return d < db ? p : best;
+                  })?.weather ?? null
+                : null;
+              const displayPos = chartShipPos ?? shipPos;
+              const displayWx  = chartShipPos ? chartShipWx : shipWx;
+              return displayPos?.status === "underway"
+                ? <ShipPositionLayer pos={displayPos} weather={displayWx} />
+                : null;
+            })()}
 
             {/* BOSP marker */}
             {route && <Marker position={[route.waypoints[0].lat,route.waypoints[0].lon]} icon={bospIcon}>
