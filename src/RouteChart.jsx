@@ -667,7 +667,9 @@ export default function RouteChart({ shipParams }) {
         {/* ═══ Forecast Scrubber ═══════════════════════════════════════════ */}
         {marineGrid && (() => {
           const nowMs   = Date.now();
-          const baseMs  = marineGrid.results.find(r=>r.times)?.[0] ? marineGrid.results.find(r=>r.times).times[0]*1000 : nowMs;
+          const firstResult = marineGrid.results.find(r => r.times?.length > 0);
+          const baseMs  = firstResult ? firstResult.times[0] * 1000 : nowMs;
+          const totalH  = maxHourIdx;
           const curDate = new Date(baseMs + chartHourIdx * 3600000);
           const nowIdx  = Math.round((nowMs - baseMs) / 3600000);
           const cacheAgeMin = gridFetchedAt ? Math.round((nowMs - gridFetchedAt) / 60000) : null;
@@ -808,7 +810,7 @@ export default function RouteChart({ shipParams }) {
                   scrubber — the vessel advances along the route as you play/scrub.
                 • When no chart is loaded, falls back to the real-time 30s-tick position. */}
             {(() => {
-              const firstResult = marineGrid?.results?.find(r=>r.times);
+              const firstResult = marineGrid?.results?.find(r => r.times?.length > 0);
               const baseMs = firstResult ? firstResult.times[0]*1000 : Date.now();
               const chartTimeMs = baseMs + chartHourIdx * 3600000;
               // Ship position at the current forecast time

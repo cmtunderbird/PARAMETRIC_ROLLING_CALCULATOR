@@ -1,21 +1,15 @@
-feat: ship tracks forecast scrubber + 2x faster weather fetches
+fix: restore missing totalH in scrubber + fix find().times pattern
 
-1. Ship pictogram advances with forecast scrubber (fix)
-   When synoptic chart is loaded, the vessel icon on the map is now
-   driven by the forecast time (baseMs + chartHourIdx * 3600000) instead
-   of Date.now(). As you play/scrub the 7-day forecast, the ship moves
-   along its planned route proportionally to its ETA schedule.
-   - ShipDashboard.jsx: calcCurrentPosition() accepts optional atMs param
-   - RouteChart.jsx: inline IIFE computes chartShipPos from chartTimeMs,
-     falls back to real-time shipPos when no synoptic chart is loaded
+Two bugs introduced during scrubber editing:
 
-2. Synoptic chart fetch auto-scales grid resolution (perf)
-   fetchSeaOverlay() now auto-coarsens gridRes until point count ≤ 80:
-   80 pts → 8 batches → max 12s (was unbounded, could be 60+ s)
-   Progress label now shows effective resolution and point count.
-   Point cap error changed from 1500 to a gentler "Zoom in" message.
+1. const totalH = maxHourIdx was accidentally removed from the forecast
+   scrubber IIFE. dayTicks used totalH (line 675) but it was undefined,
+   causing the day tick marks on the timeline to be blank/NaN.
+   Restored: const totalH = maxHourIdx after baseMs.
 
-3. Open-Meteo semaphore upgraded from 1 to 2 concurrent (perf)
-   weatherApi.js: OM_CONCURRENT = 2 allows 2 parallel requests.
-   ~2x faster for voyage weather (marine + atmo overlap slightly).
-   Rate: ~80 req/min vs 40 req/min — still well within free-tier limit.
+2. marineGrid.results.find(r=>r.times)?.[0] — this finds the first result
+   object that has a .times array, then indexes [0] on the object itself
+   (not the array), always returning undefined. The truthy check that
+   followed was therefore always false, so baseMs always fell back to nowMs.
+   Fixed: find(r => r.times?.length > 0) then use .times[0] directly.
+   Same fix applied to the ship-scrubber IIFE.
