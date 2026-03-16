@@ -208,7 +208,16 @@ export default function RouteChart({ shipParams }) {
   useEffect(() => { setCacheInfo(cacheStatus()); }, [marineGrid, atmoGrid]);
 
   useEffect(()=>{
-    if(route?.waypoints){ setRouteStats(computeRouteStats(route.waypoints)); setVoyageWPs(null); setVoyageWeather(null); }
+    if(route?.waypoints){
+      setRouteStats(computeRouteStats(route.waypoints));
+      setVoyageWPs(null);
+      setVoyageWeather(null);
+      // Clear live position immediately — avoids showing stale data from previous route
+      setShipPos(null);
+      setShipWx(null);
+      setShipMotion(null);
+      setShipMStat(null);
+    }
   },[route]);
 
   // ── File handling ──
