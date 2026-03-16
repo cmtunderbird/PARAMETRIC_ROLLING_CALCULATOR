@@ -1,14 +1,19 @@
-fix #4: cache dashboard single-point weather fetch in App.jsx
+fix #6: persistent Python worker — cache dataset handles, no spawn-per-request
 
-fetchData() was calling the Open-Meteo APIs on every button press with no
-caching, causing unnecessary network calls and contributing to 429 errors.
+Previously cmems-server.js spawned a fresh Python process per request:
+each call imported copernicusmarine, authenticated, and opened the dataset
+from scratch — 30-60s per call, with no reuse of open dataset handles.
 
-Fix:
-- Import cacheGet/cacheSet from weatherCache.js
-- Compute ptBounds (1-degree padding around the point) as cache key
-- Check cache before each fetch (marine and atmo separately)
-- Store result after a successful network fetch
-- 1200ms inter-endpoint gap is skipped when atmo is served from cache
+New architecture:
+- cmems_worker.py: persistent Python process started once at server boot
+  Keeps copernicusmarine dataset handles in _ds_cache dict keyed by
+  (dataset_id, user) — subsequent calls skip auth+metadata, ~3-5s instead of 60s
+  Communicates via JSON lines over stdin/stdout
+  Handles: test / wave / physics commands
+  Auto-reports ready via {"ready":true} on startup
 
-Cache TTLs (from weatherCache.js): marine = 6h, atmo = 3h.
-Repeated clicks within those windows serve instantly from localStorage.
+- cmems-server.js: spawns worker once via spawnWorker() at startup
+  workerCall() queues requests with 120s timeout
+  Worker crash auto-restarts after 2s with pending requests rejected cleanly
+  Health endpoints now report workerReady:true/false status
+  Version bumped to 2.1
