@@ -191,6 +191,25 @@ export function computeRouteStats(waypoints) {
 }
 
 /**
+ * Spherical linear interpolation between two lat/lon points (slerp).
+ * More accurate than flat linear on long legs (>200 NM).
+ */
+function slerpLatLon(lat1, lon1, lat2, lon2, frac) {
+  const toR = Math.PI / 180, toD = 180 / Math.PI;
+  const φ1 = lat1*toR, λ1 = lon1*toR, φ2 = lat2*toR, λ2 = lon2*toR;
+  const dφ = φ2-φ1, dλ = λ2-λ1;
+  const a = Math.sin(dφ/2)**2 + Math.cos(φ1)*Math.cos(φ2)*Math.sin(dλ/2)**2;
+  const Δ = 2*Math.atan2(Math.sqrt(a), Math.sqrt(1-a));
+  if (Δ < 1e-10) return { lat: lat1, lon: lon1 };
+  const sinΔ = Math.sin(Δ);
+  const A = Math.sin((1-frac)*Δ)/sinΔ, B = Math.sin(frac*Δ)/sinΔ;
+  const x = A*Math.cos(φ1)*Math.cos(λ1) + B*Math.cos(φ2)*Math.cos(λ2);
+  const y = A*Math.cos(φ1)*Math.sin(λ1) + B*Math.cos(φ2)*Math.sin(λ2);
+  const z = A*Math.sin(φ1)              + B*Math.sin(φ2);
+  return { lat: Math.atan2(z, Math.sqrt(x*x+y*y))*toD, lon: Math.atan2(y, x)*toD };
+}
+
+/**
  * Generate weather sample points along route (every ~50 NM or at waypoints)
  */
 export function generateWeatherSamplePoints(waypoints, intervalNM = 50) {
@@ -203,8 +222,7 @@ export function generateWeatherSamplePoints(waypoints, intervalNM = 50) {
     const numSamples = Math.max(1, Math.floor(legDist / intervalNM));
     for (let s = 1; s <= numSamples; s++) {
       const frac = s / (numSamples + 1);
-      const lat = a.lat + (b.lat - a.lat) * frac;
-      const lon = a.lon + (b.lon - a.lon) * frac;
+      const { lat, lon } = slerpLatLon(a.lat, a.lon, b.lat, b.lon, frac);
       const segDist = legDist * frac;
       points.push({ lat, lon, name: `L${i + 1}-S${s}`, legIdx: i, cumNM: cumNM + segDist });
     }

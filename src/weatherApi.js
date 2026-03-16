@@ -203,7 +203,8 @@ export function closestHourIdx(times_unix, targetMs) {
     Math.abs(t*1000-targetMs) < Math.abs(times_unix[best]*1000-targetMs) ? k : best, 0);
 }
 
-export function snapshotAt(pt, hourIdx) {
+// snapshotAt — internal helper, not exported (unused outside weatherApi.js)
+function snapshotAt(pt, hourIdx) {
   if (!pt || pt.error) return null;
   const g = (arr) => arr?.[hourIdx] ?? null;
   return {

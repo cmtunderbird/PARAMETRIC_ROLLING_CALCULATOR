@@ -6,7 +6,7 @@
 //   ShipPolarDiagram     – SVG thermal polar chart: risk heatmap + all env vectors
 //   calcCurrentPosition  – Interpolates position along route from BOSP + now
 //   ShipInfoPanel        – Compact data panel (pos, heading, weather at position)
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
 import { G, DEG_TO_RAD, calcEncounterPeriod, calcParametricRollRisk,
@@ -227,7 +227,6 @@ export function ShipPolarDiagram({ pos, weather, shipParams }) {
   }
   function Arrow({ bearing, len, color, dash, label, width=2.5 }) {
     const tip  = vecPt(bearing, len);
-    const back = vecPt(bearing + 180, 8);
     const la   = vecPt(bearing + 150, len - 12);
     const ra   = vecPt(bearing - 150, len - 12);
     return (

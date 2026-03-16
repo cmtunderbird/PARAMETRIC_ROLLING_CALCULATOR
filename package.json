@@ -9,7 +9,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "cmems": "node cmems-server.js",
-    "start": "node cmems-server.js & vite"
+    "start": "node cmems-server.js"
   },
   "dependencies": {
     "cors": "^2.8.6",

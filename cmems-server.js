@@ -17,6 +17,14 @@ const PORT = 5174;
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
+// ── Per-request timeout: 130s (covers worst-case first-dataset-open ~120s) ───
+app.use((req, res, next) => {
+  res.setTimeout(130_000, () => {
+    if (!res.headersSent) res.status(503).json({ error: "Request timeout (130s)" });
+  });
+  next();
+});
+
 // ── Persistent Python worker ──────────────────────────────────────────────────
 let worker      = null;   // child_process
 let workerReady = false;  // true once "{"ready":true}" received from worker

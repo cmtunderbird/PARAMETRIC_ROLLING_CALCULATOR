@@ -106,7 +106,6 @@ export function clearCmemsCredentials() {
   try { sessionStorage.removeItem("cmems_user"); sessionStorage.removeItem("cmems_pass"); } catch { /* ignore */ }
 }
 
-// ─── Removed (dead code) ──────────────────────────────────────────────────────
-// cmemsAuthHeader() — no longer needed, auth is handled by cmems-server.js
-// fetchOPeNDAP()    — old THREDDS endpoint decommissioned April 2024
-// mergeVarGrids()   — handled server-side in cmems-server.js
+// ─── Removed (dead code from pre-April-2024 OPeNDAP implementation) ──────────
+// fetchOPeNDAP()  — old THREDDS endpoint decommissioned April 2024
+// mergeVarGrids() — handled server-side in cmems-server.js / cmems_worker.py

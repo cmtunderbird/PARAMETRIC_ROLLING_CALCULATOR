@@ -1,19 +1,47 @@
-fix #6: persistent Python worker — cache dataset handles, no spawn-per-request
+fix #1,2,3,5,11,12,13,14,15,16,17,18,19: full minor issues batch
 
-Previously cmems-server.js spawned a fresh Python process per request:
-each call imported copernicusmarine, authenticated, and opened the dataset
-from scratch — 30-60s per call, with no reuse of open dataset handles.
+physics.js (#1):
+  calcEncounterPeriod rewritten using Te = |Tw / (1 - V*cosA/Vw)| form
+  Proper wave-celerity check avoids surf-riding singularity
+  Te capped at 200s (no practical parametric resonance beyond that)
+  omega_e floor replaced with 2*pi/200 rad/s (was arbitrary 0.01)
+  makeSeakeepingSpecs unexported (#11) — internal only, never imported
 
-New architecture:
-- cmems_worker.py: persistent Python process started once at server boot
-  Keeps copernicusmarine dataset handles in _ds_cache dict keyed by
-  (dataset_id, user) — subsequent calls skip auth+metadata, ~3-5s instead of 60s
-  Communicates via JSON lines over stdin/stdout
-  Handles: test / wave / physics commands
-  Auto-reports ready via {"ready":true} on startup
+MeteoOverlay.jsx (#5):
+  renderSynopticImage: dead atmoGrid parameter removed from signature
+  and from the one call site — atmo rendered separately by component
 
-- cmems-server.js: spawns worker once via spawnWorker() at startup
-  workerCall() queues requests with 120s timeout
-  Worker crash auto-restarts after 2s with pending requests rejected cleanly
-  Health endpoints now report workerReady:true/false status
-  Version bumped to 2.1
+ShipDashboard.jsx (#2, #12):
+  Dead `back = vecPt(bearing+180, 8)` variable removed (#2)
+  Unused `useState` removed from import (#12)
+
+weatherApi.js (#14):
+  snapshotAt unexported — internal helper only, never called externally
+
+cmemsProvider.js (#15):
+  Dead comment about cmemsAuthHeader cleaned up
+
+RouteParser.js (#16):
+  generateWeatherSamplePoints: flat lat/lon lerp replaced with
+  great-circle slerp (spherical linear interpolation) for accuracy
+  on long legs (up to 0.3% error on 600 NM legs with old approach)
+
+weatherCache.js (#3):
+  cacheStatus: snapshot keys array before iterating to prevent
+  index-shifting if evictOldEntries fires during the loop
+
+RouteChart.jsx (#13):
+  Removed 5 import-only unused symbols:
+  snapshotAt, getSafetyCostFactor, getRiskLevel,
+  calcParametricRiskRatio, calcEncounterPeriod, fetchMarineGrid
+
+cmems-server.js (#18):
+  Per-request timeout middleware: 130s (covers worst-case first open)
+  Returns 503 JSON if worker doesn't respond in time
+
+package.json (#19):
+  "start" script: removed bash-only & operator — now just node cmems-server.js
+  Windows cmd does not support & for background processes
+
+vite.config.js (#17):
+  Added clear NOTE comment: proxy is dev-only, dist/ build has no proxy

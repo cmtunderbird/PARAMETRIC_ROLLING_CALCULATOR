@@ -122,21 +122,21 @@ export function cacheClearAll() {
 export function cacheStatus() {
   const entries = [];
   try {
+    // Snapshot keys first — avoids index-shifting if eviction fires mid-loop
+    const keys = [];
     for (let i = 0; i < localStorage.length; i++) {
       const k = localStorage.key(i);
-      if (!k?.startsWith(`wxcache_${CACHE_VER}_`)) continue;
+      if (k?.startsWith(`wxcache_${CACHE_VER}_`)) keys.push(k);
+    }
+    for (const k of keys) {
       try {
         const e = JSON.parse(localStorage.getItem(k));
-        const ageMin = Math.round((Date.now() - e.fetchedAt) / 60000);
-        const staleIn = Math.round((STALE_MS[e.type] - (Date.now() - e.fetchedAt)) / 60000);
-        entries.push({
-          type: e.type, ageMin,
-          staleInMin: Math.max(0, staleIn),
-          pts: e.results?.length || 0,
-          bounds: e.bounds,
-        });
-      } catch { /* corrupt entry */ }
+        const ageMin    = Math.round((Date.now() - e.fetchedAt) / 60000);
+        const staleIn   = Math.round((STALE_MS[e.type] - (Date.now() - e.fetchedAt)) / 60000);
+        entries.push({ type: e.type, ageMin, staleInMin: Math.max(0, staleIn),
+                        pts: e.results?.length || 0, bounds: e.bounds });
+      } catch { /* corrupt entry — skip */ }
     }
-  } catch { /* ignore */ }
+  } catch { /* localStorage unavailable */ }
   return entries;
 }

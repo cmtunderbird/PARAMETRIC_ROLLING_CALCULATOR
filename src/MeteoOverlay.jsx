@@ -128,7 +128,7 @@ function fillNulls(grid, rows, cols, passes=4) {
 }
 
 // ─── Master render ─────────────────────────────────────────────────────────────
-function renderSynopticImage(marineGrid, atmoGrid, mode, shipParams, hourIdx) {
+function renderSynopticImage(marineGrid, mode, shipParams, hourIdx) {
   const { bounds, gridRes } = marineGrid;
   const { south, north, west, east } = bounds;
   const cols = Math.round((east-west)/gridRes)+1;
@@ -310,7 +310,7 @@ export default function MeteoCanvasOverlay({ marineGrid, atmoGrid, physicsGrid, 
   useEffect(() => {
     if (!map || !marineGrid?.results?.length) return;
     const { south, north, west, east } = marineGrid.bounds;
-    const { canvas, cols, rows, cw, ch } = renderSynopticImage(marineGrid, atmoGrid, mode, shipParams, hourIdx);
+    const { canvas, cols, rows, cw, ch } = renderSynopticImage(marineGrid, mode, shipParams, hourIdx);
     if (atmoGrid?.results?.length)
       renderAtmoLayer(canvas, cols, rows, cw, ch, atmoGrid.results, marineGrid.bounds, marineGrid.gridRes, hourIdx);
     if (physicsGrid?.results?.length)

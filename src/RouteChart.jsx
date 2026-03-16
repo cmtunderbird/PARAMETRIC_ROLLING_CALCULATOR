@@ -14,15 +14,14 @@ import "leaflet/dist/leaflet.css";
 import { autoDetectAndParse, computeRouteStats, generateWeatherSamplePoints,
          generateSampleRTZ } from "./RouteParser.js";
 import MeteoCanvasOverlay, { getColorLegend } from "./MeteoOverlay.jsx";
-import { buildGridPoints, fetchMarineGrid, fetchAtmosphericGrid,
+import { buildGridPoints, fetchAtmosphericGrid,
          fetchMarineUnified, fetchCmemsPhysicsGrid,
-         closestHourIdx, snapshotAt, calcVoyageETAs } from "./weatherApi.js";
+         closestHourIdx, calcVoyageETAs } from "./weatherApi.js";
 import { cacheStatus, cacheClearAll, cacheInvalidate } from "./weatherCache.js";
 import { testCmemsConnection, loadCmemsCredentials,
          saveCmemsCredentials, clearCmemsCredentials,
          CMEMS_WAVE_DATASET, CMEMS_PHYSICS_DATASET } from "./cmemsProvider.js";
-import { calcMotions, getSafetyCostFactor, getMotionStatus,
-         getRiskLevel, calcParametricRiskRatio, calcEncounterPeriod } from "./physics.js";
+import { calcMotions, getMotionStatus } from "./physics.js";
 import { calcCurrentPosition, ShipPositionLayer,
          ShipPolarDiagram, ShipInfoPanel } from "./ShipDashboard.jsx";
 

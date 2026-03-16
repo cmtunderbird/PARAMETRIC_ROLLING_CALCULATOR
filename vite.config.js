@@ -8,9 +8,10 @@ export default defineConfig({
     open: false,
     proxy: {
       // ── CMEMS proxy → local Node.js cmems-server.js (port 5174) ─────────
-      // Browser calls /cmems-proxy/... → forwarded to the Node server which
-      // calls the new copernicusmarine Python toolbox (v2.x).
-      // The old nrt.cmems-du.eu THREDDS endpoint was decommissioned April 2024.
+      // NOTE: This proxy is ONLY active during `npm run dev`.
+      // The built dist/ files have NO proxy — cmems-server.js must be
+      // reached via a reverse proxy (nginx/caddy) in any production setup.
+      // For local use, always launch via launch.bat or `npm run dev`.
       '/api/cmems': {
         target: 'http://localhost:5174',
         changeOrigin: false,

@@ -34,7 +34,8 @@ export const SafetyLimits = {
 };
 
 // ─── SeakeepingSpecs — vessel-specific seakeeping parameters ─────────────────
-export function makeSeakeepingSpecs(overrides = {}) {
+// Internal default factory — not exported (unused outside physics.js)
+function makeSeakeepingSpecs(overrides = {}) {
   return {
     gm_laden:            2.5,   // m
     gm_ballast:          4.0,
@@ -52,20 +53,34 @@ export function makeSeakeepingSpecs(overrides = {}) {
 }
 
 // ─── Encounter Frequency (deep-water dispersion, windmar formula) ────────────
-// omega_e = |omega - omega^2 * V_ms * cos(alpha) / G|
-// More accurate than period-ratio formula for following/quartering seas
+// Standard form: omega_e = |omega - omega² * V_ms * cos(alpha) / G|
+// For following seas (alpha→0, cos→1) at high speed the denominator of Te
+// approaches zero — we clamp Te to a physically meaningful floor of 200s
+// (beyond which parametric rolling is not possible) rather than 0.01 rad/s.
 export function calcEncounterFrequency(Tw, V_kts, headingRel_deg) {
   if (Tw <= 0) return 0.01;
   const omega = (2 * Math.PI) / Tw;
-  const V_ms = V_kts * KTS_TO_MS;
+  const V_ms  = V_kts * KTS_TO_MS;
   const alpha = headingRel_deg * DEG_TO_RAD;
   const omega_e = Math.abs(omega - (omega * omega * V_ms * Math.cos(alpha)) / G);
-  return omega_e < 0.01 ? 0.01 : omega_e;
+  // Floor: Te_max = 200s → omega_e_min = 2π/200 ≈ 0.0314 rad/s
+  // Replaces the old arbitrary 0.01 floor which suppressed resonance detection
+  return omega_e < (2 * Math.PI / 200) ? (2 * Math.PI / 200) : omega_e;
 }
 
 export function calcEncounterPeriod(Tw, V_kts, headingRel_deg) {
-  const omega_e = calcEncounterFrequency(Tw, V_kts, headingRel_deg);
-  return (2 * Math.PI) / omega_e;
+  if (Tw <= 0) return 200;
+  const omega   = (2 * Math.PI) / Tw;
+  const V_ms    = V_kts * KTS_TO_MS;
+  const alpha   = headingRel_deg * DEG_TO_RAD;
+  const cosA    = Math.cos(alpha);
+  // Wave celerity: Vw = g / omega (deep water)
+  const Vw      = G / omega;
+  // Avoid division by zero when ship speed equals wave celerity in following seas
+  const denom   = 1 - (V_ms * cosA) / Vw;
+  if (Math.abs(denom) < 0.01) return 200;   // surf-riding — Te undefined, cap at 200s
+  const Te = Math.abs(Tw / denom);
+  return Te > 200 ? 200 : Te;               // cap at 200s (no practical resonance beyond)
 }
 
 // ─── Natural Roll Period — IMO MSC method ────────────────────────────────────
