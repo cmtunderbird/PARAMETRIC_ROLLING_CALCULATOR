@@ -178,6 +178,7 @@ except Exception as e:
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
-app.get("/api/health", (_, res) => res.json({ ok: true, server: "cmems-proxy", version: "2.0" }));
+app.get("/api/health",       (_, res) => res.json({ ok: true, server: "cmems-proxy", version: "2.0" }));
+app.get("/api/cmems/health", (_, res) => res.json({ ok: true, server: "cmems-proxy", version: "2.0" }));
 
 app.listen(PORT, () => console.log(`CMEMS proxy server running on http://localhost:${PORT}`));

@@ -1,5 +1,8 @@
-fix: disable Vite auto-open, launch.bat is the single browser opener
+fix: add /api/cmems/health so serverAlive() passes through Vite proxy
 
-vite.config.js: open changed from true to false.
-Vite was opening one tab, launch.bat was opening another = two tabs at localhost:3000.
-Now only launch.bat opens the browser, exactly once, after detecting the port.
+Path mismatch: serverAlive() fetches /api/cmems/health which Vite proxies
+to localhost:5174/api/cmems/health, but cmems-server.js only had /api/health.
+Express returned 404, serverAlive() returned false, test showed server-not-running
+error even though the server was actually running (visible in the screenshot).
+
+Fix: register both /api/health and /api/cmems/health on the Express server.
