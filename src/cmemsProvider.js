@@ -14,12 +14,14 @@
 //   Wave:    cmems_mod_glo_wav_anfc_0.083deg_PT3H-i
 //   Physics: cmems_mod_glo_phy_anfc_0.083deg_PT1H-m
 
-// ── API base: Vite proxy in browser dev, direct port in Electron production ───
-// In dev (browser):  /api/cmems  → Vite proxy → localhost:5174
-// In Electron:       http://localhost:5174/api/cmems  (no proxy layer needed)
-const CMEMS_BASE = (typeof window !== 'undefined' && window.electronAPI?.isElectron)
-  ? 'http://localhost:5174/api/cmems'
-  : '/api/cmems';
+// ── API base: resolved lazily so Electron's preload has time to inject window.electronAPI
+// In Electron:   http://localhost:5174/api/cmems  (direct — no Vite proxy)
+// In browser:    /api/cmems                       (Vite proxy → localhost:5174)
+function cmemsBase() {
+  return (typeof window !== 'undefined' && window.electronAPI?.isElectron)
+    ? 'http://localhost:5174/api/cmems'
+    : '/api/cmems';
+}
 
 export const CMEMS_WAVE_DATASET    = "cmems_mod_glo_wav_anfc_0.083deg_PT3H-i";
 export const CMEMS_PHYSICS_DATASET = "cmems_mod_glo_phy_anfc_0.083deg_PT1H-m";
@@ -32,7 +34,7 @@ function authHeader(user, pass) {
 // ─── Server health check ──────────────────────────────────────────────────────
 async function serverAlive() {
   try {
-    const r = await fetch(`${CMEMS_BASE}/health`, { signal: AbortSignal.timeout(2000) });
+    const r = await fetch(`${cmemsBase()}/health`, { signal: AbortSignal.timeout(2000) });
     return r.ok;
   } catch { return false; }
 }
@@ -49,7 +51,7 @@ export async function testCmemsConnection(user, pass) {
   };
 
   try {
-    const resp = await fetch(`${CMEMS_BASE}/test`, {
+    const resp = await fetch(`${cmemsBase()}/test`, {
       headers: { Authorization: authHeader(user, pass) },
       signal: AbortSignal.timeout(90000),
     });
@@ -69,7 +71,7 @@ export async function cmemsWaveGrid(user, pass, bounds, forecastDays = 7) {
     west:  west.toFixed(3),  east:  east.toFixed(3),
     forecastDays,
   });
-  const resp = await fetch(`${CMEMS_BASE}/wave?${params}`, {
+  const resp = await fetch(`${cmemsBase()}/wave?${params}`, {
     headers: { Authorization: authHeader(user, pass) },
     signal: AbortSignal.timeout(120000),
   });
@@ -87,7 +89,7 @@ export async function cmemsPhysicsGrid(user, pass, bounds, forecastDays = 2) {
     south: south.toFixed(3), north: north.toFixed(3),
     west:  west.toFixed(3),  east:  east.toFixed(3),
   });
-  const resp = await fetch(`${CMEMS_BASE}/physics?${params}`, {
+  const resp = await fetch(`${cmemsBase()}/physics?${params}`, {
     headers: { Authorization: authHeader(user, pass) },
     signal: AbortSignal.timeout(120000),
   });
