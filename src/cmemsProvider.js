@@ -13,7 +13,8 @@ function onFileProtocol() {
   return typeof window !== 'undefined' && window.location?.protocol === 'file:';
 }
 
-// Whether the flat CMEMS bridge functions are available
+// Whether the flat CMEMS bridge functions are available — kept for diagnostics only
+// (no longer used as a guard; direct calls throw useful TypeErrors if missing)
 function hasCmemsBridge() {
   return typeof window !== 'undefined' &&
          typeof window.electronAPI?.cmemsTest === 'function';
@@ -41,10 +42,8 @@ export async function testCmemsConnection(user, pass) {
   if (!user || !pass) return { ok: false, message: 'Enter username and password first.' };
   try {
     if (onFileProtocol()) {
-      // Electron: must use IPC bridge — fetch() is blocked on file:// origin
-      if (!hasCmemsBridge()) {
-        return { ok: false, message: '❌ Electron IPC bridge not available. Try relaunching the app.' };
-      }
+      // Electron: call IPC directly — if electronAPI isn't injected yet it will
+      // throw a TypeError which we catch and surface as a useful message.
       return await window.electronAPI.cmemsTest(user, pass);
     }
     return await browserFetch('/test', user, pass);
@@ -57,7 +56,7 @@ export async function testCmemsConnection(user, pass) {
 export async function cmemsWaveGrid(user, pass, bounds, forecastDays = 7) {
   const { south, north, west, east } = bounds;
   const r = n => parseFloat(n.toFixed(3));
-  if (onFileProtocol() && hasCmemsBridge()) {
+  if (onFileProtocol()) {
     return window.electronAPI.cmemsWave(user, pass, r(south), r(north), r(west), r(east), forecastDays);
   }
   const q = new URLSearchParams({ south: r(south), north: r(north), west: r(west), east: r(east), forecastDays });
@@ -68,7 +67,7 @@ export async function cmemsWaveGrid(user, pass, bounds, forecastDays = 7) {
 export async function cmemsPhysicsGrid(user, pass, bounds) {
   const { south, north, west, east } = bounds;
   const r = n => parseFloat(n.toFixed(3));
-  if (onFileProtocol() && hasCmemsBridge()) {
+  if (onFileProtocol()) {
     return window.electronAPI.cmemsPhysics(user, pass, r(south), r(north), r(west), r(east));
   }
   const q = new URLSearchParams({ south: r(south), north: r(north), west: r(west), east: r(east) });
