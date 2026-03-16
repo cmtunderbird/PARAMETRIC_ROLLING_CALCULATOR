@@ -176,48 +176,77 @@ ipcMain.handle('creds:clear',        ()                  => credsClear());
 ipcMain.handle('app:version',        ()                  => app.getVersion());
 ipcMain.handle('shell:openExternal', (_, url)            => shell.openExternal(url));
 
-// ── Generic CMEMS HTTP proxy via IPC ───────────────────────────────────────
-// Renderer fetch() to http:// is blocked from file:// origin in Chromium.
-// All CMEMS API calls are routed here so the main process makes the actual
-// HTTP request using Node's http module.
-// IMPORTANT: Waits up to 30 s for cmemsReady before making any request,
-// so callers never need to check server readiness themselves.
-ipcMain.handle('cmems:fetch', async (_, { url, method = 'GET', headers = {}, body }) => {
-  // Wait for server to be ready (max 30 s, check every 200 ms)
-  const deadline = Date.now() + 30000;
-  while (!cmemsReady && Date.now() < deadline) {
-    await new Promise(r => setTimeout(r, 200));
-  }
-  if (!cmemsReady) {
-    return { ok: false, status: 0, json: { error: 'CMEMS server did not start within 30 s' } };
-  }
-
-  return new Promise((resolve) => {
-    const parsed = new URL(url);
-    const options = {
-      hostname: parsed.hostname,
-      port: parsed.port || 5174,
-      path: parsed.pathname + parsed.search,
-      method,
-      headers,
-      timeout: 120000,
+// ── CMEMS IPC helpers ──────────────────────────────────────────────────────
+// Waits for cmemsReady then makes a Node http request.
+// Returns parsed JSON or throws with a descriptive message.
+function waitReady() {
+  return new Promise((resolve, reject) => {
+    const deadline = Date.now() + 30000;
+    const check = () => {
+      if (cmemsReady) return resolve();
+      if (Date.now() > deadline) return reject(new Error('CMEMS server did not start within 30 s'));
+      setTimeout(check, 200);
     };
-    const req = http.request(options, (res) => {
-      let data = '';
-      res.on('data', chunk => { data += chunk; });
-      res.on('end', () => {
-        try { resolve({ ok: res.statusCode < 400, status: res.statusCode, json: JSON.parse(data) }); }
-        catch { resolve({ ok: false, status: res.statusCode, json: { error: data } }); }
-      });
-    });
-    req.on('error', (e) => resolve({ ok: false, status: 0, json: { error: e.message } }));
-    req.on('timeout', () => { req.destroy(); resolve({ ok: false, status: 0, json: { error: 'timeout' } }); });
-    if (body) req.write(body);
+    check();
+  });
+}
+
+function nodeGet(urlStr, authHeader) {
+  return new Promise((resolve, reject) => {
+    const u = new URL(urlStr);
+    const req = http.request(
+      { hostname: u.hostname, port: u.port || 5174,
+        path: u.pathname + u.search, method: 'GET',
+        headers: { Authorization: authHeader }, timeout: 120000 },
+      (res) => {
+        let d = '';
+        res.on('data', c => { d += c; });
+        res.on('end', () => {
+          try { resolve(JSON.parse(d)); }
+          catch { reject(new Error(`Bad JSON from server: ${d.slice(0, 100)}`)); }
+        });
+      }
+    );
+    req.on('error', reject);
+    req.on('timeout', () => { req.destroy(); reject(new Error('Request timed out')); });
     req.end();
   });
+}
+
+function basicAuth(user, pass) {
+  return 'Basic ' + Buffer.from(`${user}:${pass}`).toString('base64');
+}
+
+const PORT = 5174;
+
+// ── Dedicated CMEMS IPC handlers ───────────────────────────────────────────
+// Each handler is self-contained: waits for server, builds URL, makes request.
+// The renderer never touches URLs, headers, or fetch() at all.
+
+ipcMain.handle('cmems:test', async (_, { user, pass }) => {
+  try {
+    await waitReady();
+    return await nodeGet(`http://localhost:${PORT}/api/cmems/test`, basicAuth(user, pass));
+  } catch(e) { return { ok: false, message: `❌ ${e.message}` }; }
 });
 
-// ── Server readiness check — uses in-memory flag, NOT an HTTP probe ────────
+ipcMain.handle('cmems:wave', async (_, { user, pass, south, north, west, east, forecastDays }) => {
+  try {
+    await waitReady();
+    const q = `south=${south}&north=${north}&west=${west}&east=${east}&forecastDays=${forecastDays}`;
+    return await nodeGet(`http://localhost:${PORT}/api/cmems/wave?${q}`, basicAuth(user, pass));
+  } catch(e) { throw new Error(`CMEMS wave: ${e.message}`); }
+});
+
+ipcMain.handle('cmems:physics', async (_, { user, pass, south, north, west, east }) => {
+  try {
+    await waitReady();
+    const q = `south=${south}&north=${north}&west=${west}&east=${east}`;
+    return await nodeGet(`http://localhost:${PORT}/api/cmems/physics?${q}`, basicAuth(user, pass));
+  } catch(e) { throw new Error(`CMEMS physics: ${e.message}`); }
+});
+
+// Keep cmems:alive for any legacy callers
 ipcMain.handle('cmems:alive', () => cmemsReady);
 let mainWindow = null;
 

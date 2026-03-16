@@ -1,59 +1,42 @@
 // ─── cmemsProvider.js ──────────────────────────────────────────────────────────
-// Copernicus Marine Service (CMEMS) data provider — v2 Toolbox API.
-//
-// Architecture (April 2024 migration):
-//   OLD (dead): nrt.cmems-du.eu THREDDS/OPeNDAP → squatted domain
-//   NEW:        browser → cmems-server.js (port 5174) → Python copernicusmarine v2
-//
-// Datasets (same as windmar):
-//   Wave:    cmems_mod_glo_wav_anfc_0.083deg_PT3H-i
-//   Physics: cmems_mod_glo_phy_anfc_0.083deg_PT1H-m
-
-// ── API base: resolved lazily so Electron's preload has time to inject ────────
-// In Electron:   http://localhost:5174/api/cmems  (direct, no Vite proxy)
-// In browser:    /api/cmems                       (Vite dev proxy)
-function cmemsBase() {
-  return (typeof window !== 'undefined' && window.electronAPI?.isElectron)
-    ? 'http://localhost:5174/api/cmems'
-    : '/api/cmems';
-}
+// In Electron: all CMEMS calls go through window.electronAPI.cmems.*
+//   Main process waits for server, builds request, returns JSON. No fetch() here.
+// In browser dev: direct fetch via Vite proxy to /api/cmems/*
 
 export const CMEMS_WAVE_DATASET    = "cmems_mod_glo_wav_anfc_0.083deg_PT3H-i";
 export const CMEMS_PHYSICS_DATASET = "cmems_mod_glo_phy_anfc_0.083deg_PT1H-m";
 
-// ─── Auth header ──────────────────────────────────────────────────────────────
+// Returns true when running inside Electron desktop app
+const isElectron = () =>
+  typeof window !== 'undefined' && window.electronAPI?.isElectron === true;
+
+// ── Browser-only helpers (Vite dev path) ──────────────────────────────────────
+function cmemsBase() { return '/api/cmems'; }
+
 function authHeader(user, pass) {
-  return "Basic " + btoa(unescape(encodeURIComponent(`${user}:${pass}`)));
+  return 'Basic ' + btoa(unescape(encodeURIComponent(`${user}:${pass}`)));
 }
 
-// ─── IPC-aware fetch ──────────────────────────────────────────────────────────
-// Chromium blocks http:// fetch() from a file:// origin (Electron production).
-// All CMEMS HTTP calls go through IPC so the main process makes the request.
-// In browser dev mode: falls back to native fetch (Vite proxy handles it).
-async function cmemsFetch(url, headers = {}) {
-  if (typeof window !== 'undefined' && window.electronAPI?.cmemsRequest) {
-    const result = await window.electronAPI.cmemsRequest({ url, headers });
-    if (!result.ok) {
-      throw new Error(`CMEMS ${result.status}: ${result.json?.error || 'request failed'}`);
-    }
-    return result.json;
-  }
-  const r = await fetch(url, { headers, signal: AbortSignal.timeout(120000) });
+async function browserFetch(path, user, pass) {
+  const r = await fetch(`${cmemsBase()}${path}`, {
+    headers: { Authorization: authHeader(user, pass) },
+    signal: AbortSignal.timeout(120000),
+  });
   if (!r.ok) {
-    const body = await r.json().catch(() => ({}));
-    throw new Error(`CMEMS ${r.status}: ${body.error || r.statusText}`);
+    const b = await r.json().catch(() => ({}));
+    throw new Error(b.error || `HTTP ${r.status}`);
   }
   return r.json();
 }
 
 // ─── Connection test ──────────────────────────────────────────────────────────
-// cmemsFetch already waits up to 30 s for cmemsReady in main.js before
-// making any request — no separate serverAlive() check needed.
 export async function testCmemsConnection(user, pass) {
-  if (!user || !pass) return { ok: false, message: "Enter username and password first." };
+  if (!user || !pass) return { ok: false, message: 'Enter username and password first.' };
   try {
-    const result = await cmemsFetch(`${cmemsBase()}/test`, { Authorization: authHeader(user, pass) });
-    return result;
+    if (isElectron()) {
+      return await window.electronAPI.cmems.test(user, pass);
+    }
+    return await browserFetch('/test', user, pass);
   } catch(e) {
     return { ok: false, message: `❌ ${e.message}` };
   }
@@ -62,34 +45,34 @@ export async function testCmemsConnection(user, pass) {
 // ─── Wave grid fetch ──────────────────────────────────────────────────────────
 export async function cmemsWaveGrid(user, pass, bounds, forecastDays = 7) {
   const { south, north, west, east } = bounds;
-  const params = new URLSearchParams({
-    south: south.toFixed(3), north: north.toFixed(3),
-    west:  west.toFixed(3),  east:  east.toFixed(3),
-    forecastDays,
-  });
-  return cmemsFetch(`${cmemsBase()}/wave?${params}`, { Authorization: authHeader(user, pass) });
+  const s = (n) => parseFloat(n.toFixed(3));
+  if (isElectron()) {
+    return await window.electronAPI.cmems.wave(user, pass, s(south), s(north), s(west), s(east), forecastDays);
+  }
+  const q = new URLSearchParams({ south: s(south), north: s(north), west: s(west), east: s(east), forecastDays });
+  return browserFetch(`/wave?${q}`, user, pass);
 }
 
 // ─── Physics grid fetch (currents + SST) ─────────────────────────────────────
 export async function cmemsPhysicsGrid(user, pass, bounds) {
   const { south, north, west, east } = bounds;
-  const params = new URLSearchParams({
-    south: south.toFixed(3), north: north.toFixed(3),
-    west:  west.toFixed(3),  east:  east.toFixed(3),
-  });
-  return cmemsFetch(`${cmemsBase()}/physics?${params}`, { Authorization: authHeader(user, pass) });
+  const s = (n) => parseFloat(n.toFixed(3));
+  if (isElectron()) {
+    return await window.electronAPI.cmems.physics(user, pass, s(south), s(north), s(west), s(east));
+  }
+  const q = new URLSearchParams({ south: s(south), north: s(north), west: s(west), east: s(east) });
+  return browserFetch(`/physics?${q}`, user, pass);
 }
 
-// ─── Credentials helpers ─────────────────────────────────────────────────────
-// In Electron: persisted securely in OS keychain via safeStorage
-// In browser:  sessionStorage only (cleared on tab close)
-const isElectron = () => typeof window !== 'undefined' && window.electronAPI?.isElectron;
+// ─── Credentials ─────────────────────────────────────────────────────────────
+// Electron: safeStorage → Windows Credential Manager (persists across restarts)
+// Browser:  sessionStorage (cleared on tab close)
 
 export async function saveCmemsCredentials(user, pass) {
   if (isElectron()) {
     try { await window.electronAPI.credsSave(user, pass); return; } catch { /* fallback */ }
   }
-  try { sessionStorage.setItem("cmems_user", user); sessionStorage.setItem("cmems_pass", pass); }
+  try { sessionStorage.setItem('cmems_user', user); sessionStorage.setItem('cmems_pass', pass); }
   catch { /* ignore */ }
 }
 
@@ -99,16 +82,16 @@ export async function loadCmemsCredentials() {
   }
   try {
     return {
-      user: sessionStorage.getItem("cmems_user") || "",
-      pass: sessionStorage.getItem("cmems_pass") || "",
+      user: sessionStorage.getItem('cmems_user') || '',
+      pass: sessionStorage.getItem('cmems_pass') || '',
     };
-  } catch { return { user: "", pass: "" }; }
+  } catch { return { user: '', pass: '' }; }
 }
 
 export async function clearCmemsCredentials() {
   if (isElectron()) {
     try { await window.electronAPI.credsClear(); return; } catch { /* fallback */ }
   }
-  try { sessionStorage.removeItem("cmems_user"); sessionStorage.removeItem("cmems_pass"); }
+  try { sessionStorage.removeItem('cmems_user'); sessionStorage.removeItem('cmems_pass'); }
   catch { /* ignore */ }
 }

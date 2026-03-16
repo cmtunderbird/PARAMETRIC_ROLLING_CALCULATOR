@@ -5,25 +5,26 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  // ── CMEMS credentials (OS keychain via safeStorage) ──────────────────────
+
+  // ── Credentials (OS keychain via safeStorage) ─────────────────────────
   credsSave:  (user, pass) => ipcRenderer.invoke('creds:save', { user, pass }),
   credsLoad:  ()           => ipcRenderer.invoke('creds:load'),
   credsClear: ()           => ipcRenderer.invoke('creds:clear'),
 
-  // ── App info ──────────────────────────────────────────────────────────────
-  getVersion: () => ipcRenderer.invoke('app:version'),
-
-  // ── Open URLs in default browser (not in Electron window) ─────────────────
+  // ── App ───────────────────────────────────────────────────────────────
+  getVersion:   ()    => ipcRenderer.invoke('app:version'),
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
 
-  // ── CMEMS server readiness (flag from main process — no HTTP probe) ──────
-  checkServerAlive: () => ipcRenderer.invoke('cmems:alive'),
-  // Push event: main process fires this the moment stdout says "running"
-  onCmemsReady: (cb) => ipcRenderer.once('cmems:ready', cb),
+  // ── CMEMS — dedicated named calls, no generic HTTP proxy ─────────────
+  // Main process waits for server ready, builds the request, returns JSON.
+  // Renderer never calls fetch() or constructs URLs/headers itself.
+  cmems: {
+    test:    (user, pass)                              => ipcRenderer.invoke('cmems:test',    { user, pass }),
+    wave:    (user, pass, south, north, west, east, forecastDays) => ipcRenderer.invoke('cmems:wave',    { user, pass, south, north, west, east, forecastDays }),
+    physics: (user, pass, south, north, west, east)   => ipcRenderer.invoke('cmems:physics', { user, pass, south, north, west, east }),
+    alive:   ()                                        => ipcRenderer.invoke('cmems:alive'),
+  },
 
-  // ── Generic CMEMS HTTP proxy (all fetch to localhost routes via main process) ─
-  cmemsRequest: (opts) => ipcRenderer.invoke('cmems:fetch', opts),
-
-  // ── Runtime detection ─────────────────────────────────────────────────────
+  // ── Runtime detection ─────────────────────────────────────────────────
   isElectron: true,
 });
