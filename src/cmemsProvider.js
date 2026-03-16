@@ -46,62 +46,14 @@ async function cmemsFetch(url, headers = {}) {
   return r.json();
 }
 
-// ─── Server health check ──────────────────────────────────────────────────────
-// Strategy (Electron): the main process tracks a cmemsReady flag via stdout.
-//   - If already ready (server was up before button click): IPC returns true instantly.
-//   - If not ready yet: wait for the 'cmems:ready' push event (up to 30 s),
-//     OR fall back to polling the flag every 500 ms.
-// Strategy (browser dev): direct fetch to /api/cmems/health via Vite proxy.
-async function serverAlive() {
-  if (typeof window === 'undefined') return false;
-
-  // ── Electron path ─────────────────────────────────────────────────────────
-  if (window.electronAPI?.checkServerAlive) {
-    // 1. Fast path: flag already set (server was running before click)
-    try {
-      if (await window.electronAPI.checkServerAlive()) return true;
-    } catch { /* ignore */ }
-
-    // 2. Wait for push event OR poll flag — whichever fires first (30 s max)
-    return new Promise((resolve) => {
-      let done = false;
-      const finish = (val) => { if (!done) { done = true; clearInterval(poll); resolve(val); } };
-
-      // Push event: main process fires the instant stdout says "running"
-      if (window.electronAPI.onCmemsReady) {
-        window.electronAPI.onCmemsReady(() => finish(true));
-      }
-
-      // Polling fallback: check flag every 500 ms
-      const poll = setInterval(async () => {
-        try {
-          if (await window.electronAPI.checkServerAlive()) finish(true);
-        } catch { /* ignore */ }
-      }, 500);
-
-      // Hard timeout after 30 s
-      setTimeout(() => finish(false), 30000);
-    });
-  }
-
-  // ── Browser dev path ──────────────────────────────────────────────────────
-  try {
-    const r = await fetch(`${cmemsBase()}/health`, { signal: AbortSignal.timeout(5000) });
-    return r.ok;
-  } catch { return false; }
-}
-
 // ─── Connection test ──────────────────────────────────────────────────────────
+// cmemsFetch already waits up to 30 s for cmemsReady in main.js before
+// making any request — no separate serverAlive() check needed.
 export async function testCmemsConnection(user, pass) {
   if (!user || !pass) return { ok: false, message: "Enter username and password first." };
-  // serverAlive() retries for up to 15 s — handles post-reboot startup lag
-  const alive = await serverAlive();
-  if (!alive) return {
-    ok: false,
-    message: "❌ CMEMS server failed to start. Ensure Node.js is installed and launch via the desktop shortcut.",
-  };
   try {
-    return await cmemsFetch(`${cmemsBase()}/test`, { Authorization: authHeader(user, pass) });
+    const result = await cmemsFetch(`${cmemsBase()}/test`, { Authorization: authHeader(user, pass) });
+    return result;
   } catch(e) {
     return { ok: false, message: `❌ ${e.message}` };
   }

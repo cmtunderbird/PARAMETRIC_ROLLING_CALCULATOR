@@ -179,8 +179,19 @@ ipcMain.handle('shell:openExternal', (_, url)            => shell.openExternal(u
 // ── Generic CMEMS HTTP proxy via IPC ───────────────────────────────────────
 // Renderer fetch() to http:// is blocked from file:// origin in Chromium.
 // All CMEMS API calls are routed here so the main process makes the actual
-// HTTP request using Node's http module, with full header support.
-ipcMain.handle('cmems:fetch', (_, { url, method = 'GET', headers = {}, body }) => {
+// HTTP request using Node's http module.
+// IMPORTANT: Waits up to 30 s for cmemsReady before making any request,
+// so callers never need to check server readiness themselves.
+ipcMain.handle('cmems:fetch', async (_, { url, method = 'GET', headers = {}, body }) => {
+  // Wait for server to be ready (max 30 s, check every 200 ms)
+  const deadline = Date.now() + 30000;
+  while (!cmemsReady && Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 200));
+  }
+  if (!cmemsReady) {
+    return { ok: false, status: 0, json: { error: 'CMEMS server did not start within 30 s' } };
+  }
+
   return new Promise((resolve) => {
     const parsed = new URL(url);
     const options = {
@@ -207,8 +218,6 @@ ipcMain.handle('cmems:fetch', (_, { url, method = 'GET', headers = {}, body }) =
 });
 
 // ── Server readiness check — uses in-memory flag, NOT an HTTP probe ────────
-// The main process sets cmemsReady=true the moment stdout says "running".
-// No HTTP request means no firewall / loopback / timing issues.
 ipcMain.handle('cmems:alive', () => cmemsReady);
 let mainWindow = null;
 
