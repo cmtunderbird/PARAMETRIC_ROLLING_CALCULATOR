@@ -1,0 +1,14 @@
+fix: launch.bat - kill stale processes, single browser, no duplicate Vite
+
+Three bugs fixed:
+1. Stale node processes from previous sessions occupied ports 3001-3004,
+   causing Vite to bind to unexpected ports (visible as "localhost:3003").
+   Fix: taskkill /F /IM node.exe at startup before launching anything.
+
+2. launch.bat started Vite in background AND ran "npm run dev" again at the
+   bottom as a foreground keepalive — two Vite instances, two browser windows.
+   Fix: removed the second "npm run dev". Window now stays open with "pause".
+
+3. Browser now opens ONCE after detecting the correct port (3000-3005 scan).
+
+Cleanup on exit: pressing any key kills all node.exe processes cleanly.
