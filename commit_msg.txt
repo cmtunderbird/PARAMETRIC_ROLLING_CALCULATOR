@@ -1,8 +1,9 @@
-fix: add /api/cmems/health so serverAlive() passes through Vite proxy
+fix: chi is not defined - replace stale alias with closestHourIdx
 
-Path mismatch: serverAlive() fetches /api/cmems/health which Vite proxies
-to localhost:5174/api/cmems/health, but cmems-server.js only had /api/health.
-Express returned 404, serverAlive() returned false, test showed server-not-running
-error even though the server was actually running (visible in the screenshot).
+fetchVoyageWeather had two calls to chi() - a leftover alias from when
+the function used destructuring assignment to import closestHourIdx as chi.
+That alias was removed but the call sites were not updated.
 
-Fix: register both /api/health and /api/cmems/health on the Express server.
+Fixed lines 271-272: chi(mr.times, ...) and chi(ar.times, ...)
+replaced with closestHourIdx(mr.times, ...) and closestHourIdx(ar.times, ...)
+which is already imported at the top of RouteChart.jsx.

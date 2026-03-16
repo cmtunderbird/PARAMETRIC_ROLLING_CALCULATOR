@@ -268,8 +268,8 @@ export default function RouteChart({ shipParams }) {
       const results = ptsWithETA.map(p=>{
         const key=`${p.lat.toFixed(1)},${p.lon.toFixed(1)}`;
         const mr=marineMap.get(key); const ar=atmoMap.get(key);
-        const mIdx = mr ? chi(mr.times, p.etaMs) : 0;
-        const aIdx = ar ? chi(ar.times, p.etaMs) : 0;
+        const mIdx = mr ? closestHourIdx(mr.times, p.etaMs) : 0;
+        const aIdx = ar ? closestHourIdx(ar.times, p.etaMs) : 0;
         const weather = mr ? {
           waveHeight:mr.waveHeight?.[mIdx], waveDir:mr.waveDir?.[mIdx], wavePeriod:mr.wavePeriod?.[mIdx],
           swellHeight:mr.swellHeight?.[mIdx], swellPeriod:mr.swellPeriod?.[mIdx], swellDir:mr.swellDir?.[mIdx],
