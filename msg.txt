@@ -1,0 +1,32 @@
+fix: resolve node.exe absolutely to fix desktop shortcut cold-start failure
+
+Root cause:
+When Electron is launched from a Windows desktop shortcut, the child process
+inherits a restricted PATH snapshot. Even though C:\Program Files\nodejs\ is
+in the machine PATH, Electron's spawn('node', ...) call was using the PATH
+from the shortcut context which did not reliably include nodejs. This caused
+the cmems-server.js spawn to fail silently (ENOENT), the server never started,
+and serverAlive() returned false after all retries.
+
+electron/main.js:
+  - Added resolveNodeBin() function that finds node.exe via 4 fallback methods:
+    1. process.env.NODE_EXE env var (injected by launch.bat — most reliable)
+    2. where.exe at runtime via spawnSync (works in any context with PATH)
+    3. Known default Windows install: C:\Program Files\nodejs\node.exe
+    4. 'node' string as last resort
+  - Replaced hardcoded 'node' string in startCmemsServer() with resolveNodeBin()
+  - Added spawnSync to imports
+
+launch.bat:
+  - Uses `where node` to locate node.exe at shell level (full PATH available)
+  - Exports NODE_EXE env var so Electron inherits the absolute path
+  - Warns if node not found via where, falls back to known default path
+  - Hard errors with clear message if Node.js truly not installed
+  - Now ALWAYS rebuilds dist before launching (prevents stale bundle issues)
+  - Shows [OK] Node.js: <path> confirmation line
+
+Verified: launch.bat correctly shows:
+  [OK] Node.js: C:\Program Files\nodejs\node.exe
+  [cmems] spawning: C:\Program Files\nodejs\node.exe <path>\cmems-server.js
+  [cmems] CMEMS proxy server running on http://localhost:5174
+  [cmems] CMEMS worker ready

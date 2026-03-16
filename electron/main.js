@@ -12,8 +12,37 @@ import { safeStorage } from 'electron';
 import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 import fs from 'fs';
+
+// ── Resolve absolute path to node.exe ─────────────────────────────────────
+// When Electron is launched from a desktop shortcut, the child process PATH
+// may not include Node.js. We resolve node.exe to an absolute path at startup
+// using `where.exe` (Windows) so the spawn never relies on PATH lookup.
+function resolveNodeBin() {
+  // 1. Packaged app: node.exe ships alongside the Electron binary
+  if (app.isPackaged) {
+    const packed = path.join(path.dirname(process.execPath), 'resources', 'node.exe');
+    if (fs.existsSync(packed)) return packed;
+  }
+  // 2. Env var injected by launch.bat (most reliable for shortcut launch)
+  if (process.env.NODE_EXE && fs.existsSync(process.env.NODE_EXE)) {
+    return process.env.NODE_EXE;
+  }
+  // 3. Resolve via where.exe at runtime (works even if PATH wasn't inherited)
+  try {
+    const result = spawnSync('where.exe', ['node'], { encoding: 'utf8' });
+    if (result.stdout) {
+      const first = result.stdout.trim().split('\n')[0].trim();
+      if (first && fs.existsSync(first)) return first;
+    }
+  } catch { /* ignore */ }
+  // 4. Known default Windows install location
+  const defaultPath = 'C:\\Program Files\\nodejs\\node.exe';
+  if (fs.existsSync(defaultPath)) return defaultPath;
+  // 5. Last resort: rely on PATH
+  return 'node';
+}
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const ROOT      = path.resolve(__dirname, '..');
@@ -42,14 +71,8 @@ function startCmemsServer() {
     return;
   }
 
-  // IMPORTANT: use system 'node', NOT process.execPath.
-  // process.execPath in Electron is the Electron binary — spawning cmems-server.js
-  // with it would launch a second Electron instance that immediately exits because
-  // app.requestSingleInstanceLock() fails (main window already holds it).
-  const nodeBin = isPacked
-    ? path.join(path.dirname(process.execPath), 'resources', 'node.exe')
-    : 'node';
-  const actualBin = (isPacked && !fs.existsSync(nodeBin)) ? 'node' : nodeBin;
+  // Resolve node to absolute path — never relies on PATH being set correctly
+  const actualBin = resolveNodeBin();
 
   console.log(`[cmems] spawning: ${actualBin} ${serverPath}`);
   cmemsServer = spawn(actualBin, [serverPath], {
