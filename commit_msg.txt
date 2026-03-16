@@ -1,17 +1,14 @@
-fix #7: compute route bounding box for voyage weather cache key
+fix #4: cache dashboard single-point weather fetch in App.jsx
 
-fetchVoyageWeather was calling fetchMarineUnified and fetchAtmosphericGrid
-with null bounds, bypassing the cache entirely. Every click on
-"Fetch Time-Aware Weather" triggered a full network fetch regardless of
-whether fresh data was already cached for that route area.
+fetchData() was calling the Open-Meteo APIs on every button press with no
+caching, causing unnecessary network calls and contributing to 429 errors.
 
-Fix: compute vBounds (south/north/west/east with 1-degree padding) from
-the deduplicated route points and pass it to both fetch calls.
-The cache key is now deterministic per route area so:
-  - First fetch: network call, result stored in localStorage
-  - Subsequent fetches within 6h (marine) / 3h (atmo): served from cache
-  - Re-fetch only happens when staleness threshold is exceeded
+Fix:
+- Import cacheGet/cacheSet from weatherCache.js
+- Compute ptBounds (1-degree padding around the point) as cache key
+- Check cache before each fetch (marine and atmo separately)
+- Store result after a successful network fetch
+- 1200ms inter-endpoint gap is skipped when atmo is served from cache
 
-Note: cache logic uses localStorage (browser-only). The Node.js test
-script correctly failed on localStorage - this is expected; the fix
-is validated by code inspection and the existing cacheGet/cacheSet logic.
+Cache TTLs (from weatherCache.js): marine = 6h, atmo = 3h.
+Repeated clicks within those windows serve instantly from localStorage.

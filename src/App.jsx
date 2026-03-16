@@ -1,5 +1,6 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import RouteChart from "./RouteChart.jsx";
+import { cacheGet, cacheSet } from "./weatherCache.js";
 import {
   G, KTS_TO_MS, DEG_TO_RAD,
   calcNaturalRollPeriod, calcWaveLength,
@@ -308,18 +309,28 @@ export default function ParametricRollingCalculator() {
   const paramRisk3factor = motions?.paramRisk ?? 0;
   const fetchData = async () => {
     setLoading(true); setError(null);
+    // 1° padding around the point gives a stable, reusable cache key
+    const ptBounds = { south: lat - 1, north: lat + 1, west: lon - 1, east: lon + 1 };
     try {
       // Sequential — never fire both simultaneously to avoid 429
       if (activeSources.includes("open-meteo-marine")) {
         try {
-          const d = await fetchWeatherData("open-meteo-marine", lat, lon);
+          const cached = cacheGet("marine", ptBounds, 2.0);
+          const d = cached
+            ? cached.results[0]  // unwrap single-point cache envelope
+            : await fetchWeatherData("open-meteo-marine", lat, lon);
+          if (!cached) cacheSet("marine", ptBounds, 2.0, [d]);
           setMarineData(d);
         } catch(e) { setError(e.message); }
       }
       if (activeSources.includes("open-meteo-weather")) {
-        await new Promise(r => setTimeout(r, 1200)); // gap between the two endpoints
         try {
-          const d = await fetchWeatherData("open-meteo-weather", lat, lon);
+          const cached = cacheGet("atmo", ptBounds, 2.0);
+          if (!cached) await new Promise(r => setTimeout(r, 1200)); // gap between endpoints
+          const d = cached
+            ? cached.results[0]
+            : await fetchWeatherData("open-meteo-weather", lat, lon);
+          if (!cached) cacheSet("atmo", ptBounds, 2.0, [d]);
           setWindData(d);
         } catch(e) { if (!error) setError(e.message); }
       }
