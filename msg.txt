@@ -1,0 +1,46 @@
+fix: route all CMEMS fetch() calls via IPC to bypass Electron file:// security
+
+Root cause: Chromium (Electron's engine) blocks http:// fetch() requests
+originating from a file:// URL. This is standard browser security behaviour.
+Even though cmems-server.js was running and healthy on localhost:5174, every
+fetch() from the renderer was silently blocked before reaching the server —
+causing the false "CMEMS server not running" error on every request.
+
+Solution: Route ALL CMEMS HTTP calls through the Electron main process via
+IPC. The main process uses Node's native http module which has no origin
+restrictions.
+
+electron/main.js:
+  - Added `import http from 'http'`
+  - Fixed actualBin bug: `actualBin` was computed correctly but `nodeBin`
+    (potentially the wrong binary) was still passed to spawn(). Now uses
+    `actualBin` consistently.
+  - Added ipcMain.handle('cmems:fetch', ...) — generic HTTP proxy using
+    Node http.request(). Accepts {url, method, headers, body}, returns
+    {ok, status, json}. Timeout: 120s. Used for all CMEMS API calls.
+  - Added ipcMain.handle('cmems:alive', ...) — lightweight health check
+    using http.get() with 5s timeout. Returns boolean.
+
+electron/preload.js:
+  - Exposed checkServerAlive() → ipcRenderer.invoke('cmems:alive')
+  - Exposed cmemsRequest(opts) → ipcRenderer.invoke('cmems:fetch', opts)
+
+src/cmemsProvider.js:
+  - Rewrote as clean single file (removed accumulated cruft from sessions)
+  - cmemsFetch(url, headers): routes via window.electronAPI.cmemsRequest
+    in Electron, native fetch() in browser dev (Vite proxy)
+  - serverAlive(): uses window.electronAPI.checkServerAlive in Electron,
+    native fetch /health in browser
+  - testCmemsConnection(), cmemsWaveGrid(), cmemsPhysicsGrid() all use
+    cmemsFetch() — fully IPC-routed in Electron
+  - Credentials: async saveCmemsCredentials/loadCmemsCredentials/clearCmemsCredentials
+    use safeStorage via IPC in Electron, sessionStorage in browser
+
+Call path in Electron:
+  React button click
+    → cmemsFetch() / checkServerAlive()
+    → window.electronAPI.cmemsRequest / .checkServerAlive  (contextBridge)
+    → ipcRenderer.invoke('cmems:fetch' / 'cmems:alive')    (preload)
+    → ipcMain.handle(...)                                   (main process)
+    → Node http.request/http.get → localhost:5174           (no restrictions)
+    → cmems-server.js → Python worker → CMEMS API

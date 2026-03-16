@@ -9,6 +9,7 @@
 
 import { app, BrowserWindow, ipcMain, shell } from 'electron';
 import { safeStorage } from 'electron';
+import http from 'http';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { spawn } from 'child_process';
@@ -32,7 +33,6 @@ if (!gotLock) { app.quit(); process.exit(0); }
 let cmemsServer = null;
 
 function startCmemsServer() {
-  // Resolve paths that work both in dev and packaged
   const serverPath = isPacked
     ? path.join(process.resourcesPath, 'cmems-server.js')
     : path.join(ROOT, 'cmems-server.js');
@@ -42,10 +42,16 @@ function startCmemsServer() {
     return;
   }
 
-  // Use the same node binary Electron ships with for the child process
-  const nodeBin = process.execPath;
+  // IMPORTANT: use system 'node', NOT process.execPath.
+  // process.execPath in Electron is the Electron binary — spawning cmems-server.js
+  // with it would launch a second Electron instance that immediately exits because
+  // app.requestSingleInstanceLock() fails (main window already holds it).
+  const nodeBin = isPacked
+    ? path.join(path.dirname(process.execPath), 'resources', 'node.exe')
+    : 'node';
+  const actualBin = (isPacked && !fs.existsSync(nodeBin)) ? 'node' : nodeBin;
 
-  cmemsServer = spawn(nodeBin, [serverPath], {
+  cmemsServer = spawn(actualBin, [serverPath], {
     cwd: isPacked ? process.resourcesPath : ROOT,
     stdio: ['ignore', 'pipe', 'pipe'],
     env: {
@@ -134,7 +140,47 @@ ipcMain.handle('creds:clear',        ()                  => credsClear());
 ipcMain.handle('app:version',        ()                  => app.getVersion());
 ipcMain.handle('shell:openExternal', (_, url)            => shell.openExternal(url));
 
-// ── BrowserWindow ──────────────────────────────────────────────────────────
+// ── Generic CMEMS HTTP proxy via IPC ───────────────────────────────────────
+// Renderer fetch() to http:// is blocked from file:// origin in Chromium.
+// All CMEMS API calls are routed here so the main process makes the actual
+// HTTP request using Node's http module, with full header support.
+ipcMain.handle('cmems:fetch', (_, { url, method = 'GET', headers = {}, body }) => {
+  return new Promise((resolve) => {
+    const parsed = new URL(url);
+    const options = {
+      hostname: parsed.hostname,
+      port: parsed.port || 5174,
+      path: parsed.pathname + parsed.search,
+      method,
+      headers,
+      timeout: 120000,
+    };
+    const req = http.request(options, (res) => {
+      let data = '';
+      res.on('data', chunk => { data += chunk; });
+      res.on('end', () => {
+        try { resolve({ ok: res.statusCode < 400, status: res.statusCode, json: JSON.parse(data) }); }
+        catch { resolve({ ok: false, status: res.statusCode, json: { error: data } }); }
+      });
+    });
+    req.on('error', (e) => resolve({ ok: false, status: 0, json: { error: e.message } }));
+    req.on('timeout', () => { req.destroy(); resolve({ ok: false, status: 0, json: { error: 'timeout' } }); });
+    if (body) req.write(body);
+    req.end();
+  });
+});
+
+// ── CMEMS health alias ─────────────────────────────────────────────────────
+ipcMain.handle('cmems:alive', async () => {
+  return new Promise((resolve) => {
+    const req = http.get('http://localhost:5174/api/cmems/health', { timeout: 5000 }, (res) => {
+      resolve(res.statusCode === 200);
+      res.resume();
+    });
+    req.on('error', () => resolve(false));
+    req.on('timeout', () => { req.destroy(); resolve(false); });
+  });
+});
 let mainWindow = null;
 
 function createWindow() {

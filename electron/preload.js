@@ -16,6 +16,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   // ── Open URLs in default browser (not in Electron window) ─────────────────
   openExternal: (url) => ipcRenderer.invoke('shell:openExternal', url),
 
+  // ── CMEMS server health check (via main process — bypasses file:// security) ─
+  checkServerAlive: () => ipcRenderer.invoke('cmems:alive'),
+
+  // ── Generic CMEMS HTTP proxy (all fetch to localhost routes via main process) ─
+  cmemsRequest: (opts) => ipcRenderer.invoke('cmems:fetch', opts),
+
   // ── Runtime detection ─────────────────────────────────────────────────────
   isElectron: true,
 });
