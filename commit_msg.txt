@@ -1,8 +1,15 @@
-fix #10: launch.bat now kills only its own PIDs, not all node.exe processes
+fix #8: move CMEMS credentials from URL query params to Authorization header
 
-Previously used taskkill /F /IM node.exe which silently killed VS Code,
-other dev servers, Discord, and any other Node-based tool on the machine.
+Credentials in query strings appear in browser history, server logs,
+nginx/apache access logs, and the browser network tab in plain text.
 
-Fix: track the specific PIDs of the CMEMS proxy and Vite processes started
-by the bat file. On exit, only those two PIDs are terminated.
-Message confirms: "Other Node processes on your machine were not affected."
+Fix:
+- cmemsProvider.js: authHeader() helper builds Basic auth string from
+  username:password; all three fetch calls (test/wave/physics) now send
+  Authorization: Basic <base64> header instead of ?user=&pass= params
+- cmems-server.js: getCredentials() helper decodes the Authorization header;
+  all three route handlers use it instead of req.query.user/pass
+  Returns 401 with clear message if header is missing or malformed
+
+Credentials are now only ever visible in memory and the Authorization header,
+which is encrypted in transit (HTTPS) and not logged by default.

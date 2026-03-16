@@ -14,10 +14,15 @@
 //   Wave:    cmems_mod_glo_wav_anfc_0.083deg_PT3H-i
 //   Physics: cmems_mod_glo_phy_anfc_0.083deg_PT1H-m
 
-const CMEMS_BASE = "/api/cmems";   // proxied by Vite → localhost:5174
+const CMEMS_BASE = "/api/cmems";
 
 export const CMEMS_WAVE_DATASET    = "cmems_mod_glo_wav_anfc_0.083deg_PT3H-i";
 export const CMEMS_PHYSICS_DATASET = "cmems_mod_glo_phy_anfc_0.083deg_PT1H-m";
+
+// ─── Auth header (Basic) — credentials never appear in URL or logs ────────────
+function authHeader(user, pass) {
+  return "Basic " + btoa(unescape(encodeURIComponent(`${user}:${pass}`)));
+}
 
 // ─── Server health check ──────────────────────────────────────────────────────
 async function serverAlive() {
@@ -39,8 +44,10 @@ export async function testCmemsConnection(user, pass) {
   };
 
   try {
-    const url = `${CMEMS_BASE}/test?user=${encodeURIComponent(user)}&pass=${encodeURIComponent(pass)}`;
-    const resp = await fetch(url, { signal: AbortSignal.timeout(90000) });
+    const resp = await fetch(`${CMEMS_BASE}/test`, {
+      headers: { Authorization: authHeader(user, pass) },
+      signal: AbortSignal.timeout(90000),
+    });
     const result = await resp.json();
     return result;
   } catch(e) {
@@ -53,13 +60,13 @@ export async function testCmemsConnection(user, pass) {
 export async function cmemsWaveGrid(user, pass, bounds, forecastDays = 7) {
   const { south, north, west, east } = bounds;
   const params = new URLSearchParams({
-    user, pass,
     south: south.toFixed(3), north: north.toFixed(3),
     west:  west.toFixed(3),  east:  east.toFixed(3),
     forecastDays,
   });
   const resp = await fetch(`${CMEMS_BASE}/wave?${params}`, {
-    signal: AbortSignal.timeout(120000),  // Python fetch can take ~60s first call
+    headers: { Authorization: authHeader(user, pass) },
+    signal: AbortSignal.timeout(120000),
   });
   if (!resp.ok) {
     const body = await resp.json().catch(() => ({}));
@@ -69,15 +76,14 @@ export async function cmemsWaveGrid(user, pass, bounds, forecastDays = 7) {
 }
 
 // ─── Physics grid fetch (currents + SST) ─────────────────────────────────────
-// Returns array of point objects with currentU, currentV, currentSpeed, currentDir, sst
 export async function cmemsPhysicsGrid(user, pass, bounds, forecastDays = 2) {
   const { south, north, west, east } = bounds;
   const params = new URLSearchParams({
-    user, pass,
     south: south.toFixed(3), north: north.toFixed(3),
     west:  west.toFixed(3),  east:  east.toFixed(3),
   });
   const resp = await fetch(`${CMEMS_BASE}/physics?${params}`, {
+    headers: { Authorization: authHeader(user, pass) },
     signal: AbortSignal.timeout(120000),
   });
   if (!resp.ok) {

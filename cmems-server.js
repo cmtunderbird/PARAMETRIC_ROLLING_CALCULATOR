@@ -39,10 +39,23 @@ function runPython(script) {
   });
 }
 
+// ── Extract credentials from Authorization: Basic header ─────────────────────
+function getCredentials(req) {
+  const auth = req.headers.authorization || "";
+  if (!auth.startsWith("Basic ")) return null;
+  try {
+    const decoded = Buffer.from(auth.slice(6), "base64").toString("utf8");
+    const colon   = decoded.indexOf(":");
+    if (colon < 1) return null;
+    return { user: decoded.slice(0, colon), pass: decoded.slice(colon + 1) };
+  } catch { return null; }
+}
+
 // ── /api/cmems/test — credential + connectivity check ────────────────────────
 app.get("/api/cmems/test", async (req, res) => {
-  const { user, pass } = req.query;
-  if (!user || !pass) return res.status(400).json({ ok: false, message: "user and pass required" });
+  const creds = getCredentials(req);
+  if (!creds) return res.status(401).json({ ok: false, message: "Missing or invalid Authorization header." });
+  const { user, pass } = creds;
 
   const script = `
 import os, json
@@ -71,10 +84,11 @@ except Exception as e:
 });
 
 // ── /api/cmems/wave — wave grid for a bounding box ───────────────────────────
-// Query params: user, pass, south, north, west, east, forecastDays (default 7)
 app.get("/api/cmems/wave", async (req, res) => {
-  const { user, pass, south, north, west, east, forecastDays = 7 } = req.query;
-  if (!user || !pass) return res.status(401).json({ error: "credentials required" });
+  const creds = getCredentials(req);
+  if (!creds) return res.status(401).json({ error: "Missing Authorization header" });
+  const { user, pass } = creds;
+  const { south, north, west, east, forecastDays = 7 } = req.query;
 
   // Work out time range: now → now + forecastDays
   const now  = new Date();
@@ -126,8 +140,10 @@ except Exception as e:
 
 // ── /api/cmems/physics — currents + SST ──────────────────────────────────────
 app.get("/api/cmems/physics", async (req, res) => {
-  const { user, pass, south, north, west, east } = req.query;
-  if (!user || !pass) return res.status(401).json({ error: "credentials required" });
+  const creds = getCredentials(req);
+  if (!creds) return res.status(401).json({ error: "Missing Authorization header" });
+  const { user, pass } = creds;
+  const { south, north, west, east } = req.query;
 
   const now = new Date();
   const end = new Date(now.getTime() + 2 * 86400000); // 2-day physics forecast
