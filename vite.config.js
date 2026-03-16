@@ -5,7 +5,7 @@ export default defineConfig({
   plugins: [react()],
   server: {
     port: 3000,
-    open: true,
+    open: false,
     proxy: {
       // ── CMEMS proxy → local Node.js cmems-server.js (port 5174) ─────────
       // Browser calls /cmems-proxy/... → forwarded to the Node server which
