@@ -264,7 +264,7 @@ function createWindow() {
     backgroundColor: '#0F172A',
     icon: fs.existsSync(iconPath) ? iconPath : undefined,
     webPreferences: {
-      preload:          path.join(__dirname, 'preload.js'),
+      preload:          path.join(__dirname, 'preload.cjs'),
       contextIsolation: true,    // renderer cannot access Node directly
       nodeIntegration:  false,   // no require() in renderer
       sandbox:          false,   // preload needs ipcRenderer
