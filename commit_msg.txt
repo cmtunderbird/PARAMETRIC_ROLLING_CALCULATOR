@@ -1,0 +1,8 @@
+fix #10: launch.bat now kills only its own PIDs, not all node.exe processes
+
+Previously used taskkill /F /IM node.exe which silently killed VS Code,
+other dev servers, Discord, and any other Node-based tool on the machine.
+
+Fix: track the specific PIDs of the CMEMS proxy and Vite processes started
+by the bat file. On exit, only those two PIDs are terminated.
+Message confirms: "Other Node processes on your machine were not affected."
