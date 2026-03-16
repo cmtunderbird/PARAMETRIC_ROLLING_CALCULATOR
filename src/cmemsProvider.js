@@ -13,10 +13,10 @@ function onFileProtocol() {
   return typeof window !== 'undefined' && window.location?.protocol === 'file:';
 }
 
-// Whether the electronAPI.cmems bridge is available
+// Whether the flat CMEMS bridge functions are available
 function hasCmemsBridge() {
   return typeof window !== 'undefined' &&
-         typeof window.electronAPI?.cmems?.test === 'function';
+         typeof window.electronAPI?.cmemsTest === 'function';
 }
 
 // ── Browser-only helpers (Vite dev / http:// path) ────────────────────────────
@@ -45,7 +45,7 @@ export async function testCmemsConnection(user, pass) {
       if (!hasCmemsBridge()) {
         return { ok: false, message: '❌ Electron IPC bridge not available. Try relaunching the app.' };
       }
-      return await window.electronAPI.cmems.test(user, pass);
+      return await window.electronAPI.cmemsTest(user, pass);
     }
     return await browserFetch('/test', user, pass);
   } catch(e) {
@@ -58,7 +58,7 @@ export async function cmemsWaveGrid(user, pass, bounds, forecastDays = 7) {
   const { south, north, west, east } = bounds;
   const r = n => parseFloat(n.toFixed(3));
   if (onFileProtocol() && hasCmemsBridge()) {
-    return window.electronAPI.cmems.wave(user, pass, r(south), r(north), r(west), r(east), forecastDays);
+    return window.electronAPI.cmemsWave(user, pass, r(south), r(north), r(west), r(east), forecastDays);
   }
   const q = new URLSearchParams({ south: r(south), north: r(north), west: r(west), east: r(east), forecastDays });
   return browserFetch(`/wave?${q}`, user, pass);
@@ -69,7 +69,7 @@ export async function cmemsPhysicsGrid(user, pass, bounds) {
   const { south, north, west, east } = bounds;
   const r = n => parseFloat(n.toFixed(3));
   if (onFileProtocol() && hasCmemsBridge()) {
-    return window.electronAPI.cmems.physics(user, pass, r(south), r(north), r(west), r(east));
+    return window.electronAPI.cmemsPhysics(user, pass, r(south), r(north), r(west), r(east));
   }
   const q = new URLSearchParams({ south: r(south), north: r(north), west: r(west), east: r(east) });
   return browserFetch(`/physics?${q}`, user, pass);
