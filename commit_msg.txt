@@ -1,9 +1,0 @@
-fix: chi is not defined - replace stale alias with closestHourIdx
-
-fetchVoyageWeather had two calls to chi() - a leftover alias from when
-the function used destructuring assignment to import closestHourIdx as chi.
-That alias was removed but the call sites were not updated.
-
-Fixed lines 271-272: chi(mr.times, ...) and chi(ar.times, ...)
-replaced with closestHourIdx(mr.times, ...) and closestHourIdx(ar.times, ...)
-which is already imported at the top of RouteChart.jsx.
