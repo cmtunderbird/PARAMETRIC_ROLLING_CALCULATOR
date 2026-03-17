@@ -386,6 +386,7 @@ export default function RouteChart({ shipParams }) {
           swellHeight_m:weather.swellHeight||0, swellPeriod_s:weather.swellPeriod||10, swellDir_deg:weather.swellDir||0,
           heading_deg:p.heading||0, speed_kts:voyageSpeed,
           Lwl:shipParams?.Lwl||200, B:shipParams?.B||32, GM:shipParams?.GM||2.5, Tr:shipParams?.Tr||14,
+          rollDamping:shipParams?.rollDamping??0.05,
         }) : null;
         const motionStatus = motions ? getMotionStatus(motions,weather?.waveHeight||0,weather?.windKts||0) : null;
         const riskSeverity = motionStatus?.severity ?? 0;
