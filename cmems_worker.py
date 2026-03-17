@@ -130,12 +130,26 @@ for raw in sys.stdin:
         continue
     try:
         cmd = json.loads(raw)
-        handler = HANDLERS.get(cmd.get("action",""))
+        # Echo requestId back so the Node.js caller can route the response to
+        # the correct Promise — prevents data corruption under concurrent requests.
+        request_id = cmd.get("requestId")
+        handler = HANDLERS.get(cmd.get("action", ""))
         if not handler:
-            print(json.dumps({"error": f"Unknown action: {cmd.get('action')}"}), flush=True)
+            out = {"error": f"Unknown action: {cmd.get('action')}"}
+            if request_id is not None:
+                out["requestId"] = request_id
+            print(json.dumps(out), flush=True)
             continue
         result = handler(cmd)
-        print(json.dumps(result), flush=True)
+        # Wrap list results in an envelope so requestId is always at the top level
+        if isinstance(result, list):
+            out = {"requestId": request_id, "data": result}
+        else:
+            out = {**result, "requestId": request_id}
+        print(json.dumps(out), flush=True)
     except Exception as exc:
         import traceback
-        print(json.dumps({"error": str(exc), "tb": traceback.format_exc()}), flush=True)
+        out = {"error": str(exc), "tb": traceback.format_exc()}
+        if "request_id" in dir() and request_id is not None:
+            out["requestId"] = request_id
+        print(json.dumps(out), flush=True)

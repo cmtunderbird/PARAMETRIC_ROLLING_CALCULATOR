@@ -83,9 +83,14 @@ app.use((req, res, next) => {
 });
 
 // ── Persistent Python worker ──────────────────────────────────────────────────
-let worker      = null;   // child_process
-let workerReady = false;  // true once "{"ready":true}" received from worker
-const pending   = [];     // queue of { resolve, reject, timer } waiting for a response
+let worker      = null;    // child_process
+let workerReady = false;   // true once {"ready":true} received from worker
+
+// Correlation map: requestId → { resolve, reject, timer }
+// Using a Map keyed by ID instead of a FIFO array prevents response
+// mis-routing when concurrent requests (e.g. wave + physics) are in flight.
+const pendingMap = new Map();
+let   nextReqId  = 1;      // monotonically increasing request counter
 
 function spawnWorker() {
   // Resolve worker path: packaged Electron app puts extraResources in resourcesPath
@@ -104,10 +109,18 @@ function spawnWorker() {
       if (!trimmed) continue;
       try {
         const msg = JSON.parse(trimmed);
+        // Ready handshake — not a response to any request
         if (msg.ready) { workerReady = true; console.log("CMEMS worker ready"); continue; }
-        const next = pending.shift();
-        if (next) { clearTimeout(next.timer); next.resolve(msg); }
-      } catch { /* partial JSON — wait for more */ }
+        // Match response to caller by requestId
+        const entry = pendingMap.get(msg.requestId);
+        if (entry) {
+          clearTimeout(entry.timer);
+          pendingMap.delete(msg.requestId);
+          entry.resolve(msg);
+        } else {
+          console.warn("[cmems-server] received response for unknown requestId:", msg.requestId);
+        }
+      } catch { /* partial JSON — wait for more data */ }
     }
   });
 
@@ -121,12 +134,12 @@ function spawnWorker() {
     console.warn(`CMEMS worker exited (code ${code}) — restarting in 2s`);
     workerReady = false;
     worker = null;
-    // Reject any in-flight requests
-    while (pending.length) {
-      const p = pending.shift();
-      clearTimeout(p.timer);
-      p.reject(new Error("CMEMS worker restarted — retry your request"));
+    // Reject all in-flight requests
+    for (const [id, entry] of pendingMap) {
+      clearTimeout(entry.timer);
+      entry.reject(new Error("CMEMS worker restarted — retry your request"));
     }
+    pendingMap.clear();
     setTimeout(spawnWorker, 2000);
   });
 }
@@ -141,13 +154,20 @@ function workerCall(cmd) {
   return new Promise((resolve, reject) => {
     if (!worker || !workerReady)
       return reject(new Error("CMEMS worker not ready — retry in a moment"));
+
+    // Assign a unique ID so the response handler can route the reply back to
+    // exactly this promise — prevents data corruption when concurrent requests
+    // (e.g. wave + physics) are in flight simultaneously.
+    const requestId = nextReqId++;
+    const cmdWithId = { ...cmd, requestId };
+
     const timer = setTimeout(() => {
-      const idx = pending.findIndex(p => p.resolve === resolve);
-      if (idx >= 0) pending.splice(idx, 1);
+      pendingMap.delete(requestId);
       reject(new Error("CMEMS worker timeout (120s)"));
     }, WORKER_TIMEOUT);
-    pending.push({ resolve, reject, timer });
-    worker.stdin.write(JSON.stringify(cmd) + "\n");
+
+    pendingMap.set(requestId, { resolve, reject, timer });
+    worker.stdin.write(JSON.stringify(cmdWithId) + "\n");
   });
 }
 
@@ -192,7 +212,8 @@ app.get("/api/cmems/wave", async (req, res) => {
       start: fmtDT(now), end: fmtDT(end),
     });
     if (result.error) return res.status(500).json(result);
-    res.json(result);
+    // Unwrap envelope: Python returns { requestId, data: [...] } for list results
+    res.json(result.data ?? result);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -211,7 +232,8 @@ app.get("/api/cmems/physics", async (req, res) => {
       start: fmtDT(now), end: fmtDT(end),
     });
     if (result.error) return res.status(500).json(result);
-    res.json(result);
+    // Unwrap envelope: Python returns { requestId, data: [...] } for list results
+    res.json(result.data ?? result);
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
