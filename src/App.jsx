@@ -1,6 +1,7 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import RouteChart from "./RouteChart.jsx";
 import { cacheGet, cacheSet } from "./weatherCache.js";
+import { sanitizeWxSnapshot } from "./weatherValidation.js";
 import {
   G, KTS_TO_MS, DEG_TO_RAD,
   calcNaturalRollPeriod, calcWaveLength,
@@ -296,9 +297,11 @@ export default function ParametricRollingCalculator() {
   const overallRisk = getRiskLevel(paramRatio_wave !== null && paramRatio_swell !== null ? (Math.abs(paramRatio_wave - 1) < Math.abs(paramRatio_swell - 1) ? paramRatio_wave : paramRatio_swell) : paramRatio_wave ?? paramRatio_swell);
 
   // ── Windmar full seakeeping motions ──
-  const motions = currentMarine ? calcMotions({
-    waveHeight_m: waveHeight, wavePeriod_s: wavePeriod, waveDir_deg: waveDir ?? heading,
-    swellHeight_m: swellHeight, swellPeriod_s: swellPeriod, swellDir_deg: swellDir ?? heading,
+  // sanitizeWxSnapshot clips fill values / NaN before physics (prevents false FORBIDDEN)
+  const safeMarine = currentMarine ? sanitizeWxSnapshot(currentMarine) : null;
+  const motions = safeMarine ? calcMotions({
+    waveHeight_m: safeMarine.waveHeight ?? 0, wavePeriod_s: safeMarine.wavePeriod ?? 8, waveDir_deg: safeMarine.waveDir ?? heading,
+    swellHeight_m: safeMarine.swellHeight ?? 0, swellPeriod_s: safeMarine.swellPeriod ?? 10, swellDir_deg: safeMarine.swellDir ?? heading,
     heading_deg: heading, speed_kts: speed,
     Lwl: ship.Lwl, B: ship.B, GM: ship.GM, Tr,
     rollDamping: ship.rollDamping ?? 0.05,

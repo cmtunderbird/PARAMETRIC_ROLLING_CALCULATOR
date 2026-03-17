@@ -5,6 +5,7 @@
 
 import { cacheGet, cacheSet } from "./weatherCache.js";
 import { cmemsWaveGrid, cmemsPhysicsGrid } from "./cmemsProvider.js";
+import { sanitizeWxPoint } from "./weatherValidation.js";
 
 // ── Global semaphore — max 2 Open-Meteo requests in flight at a time ─────────
 // 2-concurrent gives ~2x speed vs 1-concurrent while staying well within
@@ -105,11 +106,11 @@ async function _fetchMarineRaw(points, forecastDays = 7, onProgress) {
     (r, pt, out) => {
       if (!r.hourly) { out.push({ ...pt, error: r.reason||"no data" }); return; }
       const h = r.hourly;
-      out.push({ ...pt, times: h.time, source: "openmeteo",
+      out.push(sanitizeWxPoint({ ...pt, times: h.time, source: "openmeteo",
         waveHeight:  h.wave_height,       waveDir:     h.wave_direction,   wavePeriod:  h.wave_period,
         windWaveH:   h.wind_wave_height,  windWaveT:   h.wind_wave_period, windWaveDir: h.wind_wave_direction,
         swellHeight: h.swell_wave_height, swellPeriod: h.swell_wave_period,swellDir:    h.swell_wave_direction,
-      });
+      }));
     },
     onProgress
   );
@@ -125,8 +126,8 @@ async function _fetchAtmoRaw(points, forecastDays = 7, onProgress) {
     (r, pt, out) => {
       if (!r.hourly) { out.push({ ...pt, error: r.reason||"no data" }); return; }
       const h = r.hourly;
-      out.push({ ...pt, times: h.time, source: "gfs",
-        windKts: h.wind_speed_10m, windDir: h.wind_direction_10m, mslp: h.pressure_msl });
+      out.push(sanitizeWxPoint({ ...pt, times: h.time, source: "gfs",
+        windKts: h.wind_speed_10m, windDir: h.wind_direction_10m, mslp: h.pressure_msl }));
     },
     onProgress
   );

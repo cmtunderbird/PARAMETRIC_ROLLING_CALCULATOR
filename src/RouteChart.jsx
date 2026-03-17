@@ -22,6 +22,7 @@ import { testCmemsConnection, loadCmemsCredentials,
          saveCmemsCredentials, clearCmemsCredentials,
          CMEMS_WAVE_DATASET, CMEMS_PHYSICS_DATASET } from "./cmemsProvider.js";
 import { calcMotions, getMotionStatus } from "./physics.js";
+import { sanitizeWxSnapshot } from "./weatherValidation.js";
 import { calcCurrentPosition, ShipPositionLayer,
          ShipPolarDiagram, ShipInfoPanel } from "./ShipDashboard.jsx";
 
@@ -381,9 +382,10 @@ export default function RouteChart({ shipParams }) {
           swellHeight:mr.swellHeight?.[mIdx], swellPeriod:mr.swellPeriod?.[mIdx], swellDir:mr.swellDir?.[mIdx],
           windKts:ar?.windKts?.[aIdx], windDir:ar?.windDir?.[aIdx], mslp:ar?.mslp?.[aIdx],
         } : null;
-        const motions = weather ? calcMotions({
-          waveHeight_m:weather.waveHeight||0, wavePeriod_s:weather.wavePeriod||8, waveDir_deg:weather.waveDir||p.heading||0,
-          swellHeight_m:weather.swellHeight||0, swellPeriod_s:weather.swellPeriod||10, swellDir_deg:weather.swellDir||0,
+        const safeWeather = weather ? sanitizeWxSnapshot(weather) : null;
+        const motions = safeWeather ? calcMotions({
+          waveHeight_m:safeWeather.waveHeight||0, wavePeriod_s:safeWeather.wavePeriod||8, waveDir_deg:safeWeather.waveDir||p.heading||0,
+          swellHeight_m:safeWeather.swellHeight||0, swellPeriod_s:safeWeather.swellPeriod||10, swellDir_deg:safeWeather.swellDir||0,
           heading_deg:p.heading||0, speed_kts:voyageSpeed,
           Lwl:shipParams?.Lwl||200, B:shipParams?.B||32, GM:shipParams?.GM||2.5, Tr:shipParams?.Tr||14,
           rollDamping:shipParams?.rollDamping??0.05,
