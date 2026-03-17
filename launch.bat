@@ -28,6 +28,35 @@ exit /b 1
 :found_node
 echo  [OK] Node.js: %NODE_EXE%
 
+:: ── Find python.exe and export it so cmems-server.js can find it ─────────
+:: Python may be absent from the restricted PATH of a desktop shortcut child.
+:: We try python, python3, and py (Windows Launcher), skip WindowsApps stubs.
+set "PYTHON_EXE="
+for /f "delims=" %%P in ('where python 2^>nul') do (
+  echo %%P | findstr /i "WindowsApps" >nul 2>&1 || (set "PYTHON_EXE=%%P" & goto :found_python)
+)
+for /f "delims=" %%P in ('where python3 2^>nul') do (
+  echo %%P | findstr /i "WindowsApps" >nul 2>&1 || (set "PYTHON_EXE=%%P" & goto :found_python)
+)
+for /f "delims=" %%P in ('where py 2^>nul') do (
+  set "PYTHON_EXE=%%P" & goto :found_python
+)
+if exist "%LOCALAPPDATA%\Programs\Python\Python312\python.exe" (
+  set "PYTHON_EXE=%LOCALAPPDATA%\Programs\Python\Python312\python.exe" & goto :found_python
+)
+if exist "%LOCALAPPDATA%\Programs\Python\Python311\python.exe" (
+  set "PYTHON_EXE=%LOCALAPPDATA%\Programs\Python\Python311\python.exe" & goto :found_python
+)
+if exist "%LOCALAPPDATA%\Programs\Python\Python310\python.exe" (
+  set "PYTHON_EXE=%LOCALAPPDATA%\Programs\Python\Python310\python.exe" & goto :found_python
+)
+echo  [WARN] Python not found ^— CMEMS data source will be unavailable.
+echo  [WARN] Install Python 3.10+ from https://www.python.org/
+goto :no_python
+:found_python
+echo  [OK] Python: %PYTHON_EXE%
+:no_python
+
 :: ── Always rebuild dist so stale bundles never cause issues ───────────────
 echo  [BUILD] Building application bundle...
 call npm run build

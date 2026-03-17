@@ -4,13 +4,70 @@
 // a new process per request — dataset handles are cached in Python memory,
 // making calls after the first ~5s instead of ~60s.
 
-import express   from "express";
-import cors      from "cors";
-import { spawn } from "child_process";
-import path      from "path";
-import { fileURLToPath } from "url";
+import express             from "express";
+import cors                from "cors";
+import { spawn, spawnSync } from "child_process";
+import path                from "path";
+import fs                  from "fs";
+import { fileURLToPath }   from "url";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+
+// ── Resolve absolute path to python.exe ───────────────────────────────────────
+// Mirrors the resolveNodeBin() pattern from electron/main.js.
+// When cmems-server.js is spawned by Electron from a desktop shortcut, the
+// child process inherits a restricted PATH that may not include Python.
+// We use four fallback strategies to find a usable python executable:
+//   1. PYTHON_EXE env var  — set by launch.bat (most reliable for shortcuts)
+//   2. where.exe lookup    — works even when PATH is partially restricted
+//   3. Known default paths — standard Windows + common virtual env locations
+//   4. "python" / "python3"— last resort (relies on PATH being correct)
+function resolvePythonBin() {
+  // 1. Env var injected by launch.bat
+  if (process.env.PYTHON_EXE && fs.existsSync(process.env.PYTHON_EXE)) {
+    return process.env.PYTHON_EXE;
+  }
+
+  // 2. where.exe lookup — tries all names Python can have on Windows
+  for (const name of ["python", "python3", "py"]) {
+    try {
+      const r = spawnSync("where.exe", [name], { encoding: "utf8" });
+      if (r.stdout) {
+        const first = r.stdout.trim().split("\n")[0].trim();
+        // Skip Windows Store stub (opens the Store instead of running Python)
+        if (first && fs.existsSync(first) && !first.includes("WindowsApps")) {
+          return first;
+        }
+      }
+    } catch { /* ignore */ }
+  }
+
+  // 3. Known default install locations
+  const defaults = [
+    // Standard Python.org Windows installer
+    `${process.env.LOCALAPPDATA}\\Programs\\Python\\Python312\\python.exe`,
+    `${process.env.LOCALAPPDATA}\\Programs\\Python\\Python311\\python.exe`,
+    `${process.env.LOCALAPPDATA}\\Programs\\Python\\Python310\\python.exe`,
+    // Anaconda / Miniconda
+    `${process.env.USERPROFILE}\\anaconda3\\python.exe`,
+    `${process.env.USERPROFILE}\\miniconda3\\python.exe`,
+    `C:\\ProgramData\\anaconda3\\python.exe`,
+    `C:\\ProgramData\\miniconda3\\python.exe`,
+    // System-wide Python.org install
+    `C:\\Python312\\python.exe`,
+    `C:\\Python311\\python.exe`,
+    `C:\\Python310\\python.exe`,
+  ];
+  for (const p of defaults) {
+    if (p && fs.existsSync(p)) return p;
+  }
+
+  // 4. Last resort — rely on PATH
+  return "python";
+}
+
+const PYTHON_BIN = resolvePythonBin();
+console.log(`[cmems-server] Python binary: ${PYTHON_BIN}`);
 const app  = express();
 const PORT = 5174;
 
@@ -34,7 +91,7 @@ function spawnWorker() {
   // Resolve worker path: packaged Electron app puts extraResources in resourcesPath
   const workerPath = process.env.CMEMS_WORKER_PATH
     || path.join(__dirname, "cmems_worker.py");
-  worker = spawn("python", [workerPath], { stdio: ["pipe","pipe","pipe"] });
+  worker = spawn(PYTHON_BIN, [workerPath], { stdio: ["pipe","pipe","pipe"] });
   workerReady = false;
 
   let buf = "";
