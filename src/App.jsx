@@ -18,6 +18,7 @@ import { useAppState, useAppActions, PRESETS } from "./state/appStore.jsx";
 // ── Extracted UI components ──
 import Dashboard, { LOCATIONS } from "./ui/Dashboard.jsx";
 import VesselConfig from "./ui/VesselConfig.jsx";
+import DecisionBrief from "./ui/DecisionBrief.jsx";
 import {
   PolarRiskDiagram, inputStyle, sectionHeader, Panel, ErrorBoundary,
   StaleDataBanner, ManualWeatherEntry, ResumeSessionDialog,
@@ -198,6 +199,12 @@ export default function ParametricRollingCalculator() {
           <ErrorBoundary name="Dashboard">
           <StaleDataBanner lastFetch={lastFetch} dataAgeMinutes={dataAgeMinutes} isStale={isStale} isOffline={isOffline} />
           {isOffline && <ManualWeatherEntry onApply={handleManualWeather} />}
+          {marineData && <DecisionBrief
+            waveHeight_m={waveHeight} wavePeriod_s={wavePeriod} waveDir_deg={waveDir}
+            swellHeight_m={swellHeight} swellPeriod_s={swellPeriod} swellDir_deg={swellDir}
+            windSpeed_kts={windSpeed_kts} ship={ship}
+            currentHeading={heading} currentSpeed={speed}
+          />}
           <Dashboard
             latDeg={latDeg} latMin={latMin} latHemi={latHemi} setLatDeg={setLatDeg} setLatMin={setLatMin} setLatHemi={setLatHemi}
             lonDeg={lonDeg} lonMin={lonMin} lonHemi={lonHemi} setLonDeg={setLonDeg} setLonMin={setLonMin} setLonHemi={setLonHemi}
