@@ -19,7 +19,7 @@ import { useAppState, useAppActions, PRESETS } from "./state/appStore.jsx";
 import Dashboard, { LOCATIONS } from "./ui/Dashboard.jsx";
 import VesselConfig from "./ui/VesselConfig.jsx";
 import {
-  PolarRiskDiagram, inputStyle, sectionHeader, Panel,
+  PolarRiskDiagram, inputStyle, sectionHeader, Panel, ErrorBoundary,
   nauticalToDecimal, formatNauticalLat, formatNauticalLon,
 } from "./ui/components/index.js";
 
@@ -162,6 +162,7 @@ export default function ParametricRollingCalculator() {
       {/* ─ Tab content ─ */}
       <div style={{ padding: "16px 24px" }}>
         {activeTab === "dashboard" && (
+          <ErrorBoundary name="Dashboard">
           <Dashboard
             latDeg={latDeg} latMin={latMin} latHemi={latHemi} setLatDeg={setLatDeg} setLatMin={setLatMin} setLatHemi={setLatHemi}
             lonDeg={lonDeg} lonMin={lonMin} lonHemi={lonHemi} setLonDeg={setLonDeg} setLonMin={setLonMin} setLonHemi={setLonHemi}
@@ -179,9 +180,11 @@ export default function ParametricRollingCalculator() {
             motions={motions} costFactor={costFactor} motionStatus={motionStatus}
             speedLossPct={speedLossPct} paramRisk3factor={paramRisk3factor} shipParams={shipParams}
           />
+          </ErrorBoundary>
         )}
-        {activeTab === "vessel" && <VesselConfig ship={ship} updateShip={actions.updateShip} Tr={Tr} />}
+        {activeTab === "vessel" && <ErrorBoundary name="Vessel Config"><VesselConfig ship={ship} updateShip={actions.updateShip} Tr={Tr} /></ErrorBoundary>}
         {activeTab === "weather" && (
+          <ErrorBoundary name="Weather Sources">
           <div style={{ maxWidth: 700 }}>
             <Panel>{sectionHeader("Active Weather Sources")}
               {Object.entries(WEATHER_SOURCES).map(([key, src]) => (
@@ -216,8 +219,10 @@ export default function ParametricRollingCalculator() {
               ))}
             </Panel>
           </div>
+          </ErrorBoundary>
         )}
         {activeTab === "polar" && (
+          <ErrorBoundary name="Polar Analysis">
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <Panel>{sectionHeader("Parametric Roll Risk Polar")}
               <div style={{ color: "#94A3B8", fontSize: 10, marginBottom: 8 }}>Risk intensity by relative heading angle. Center = maximum danger (ratio = 1.0). Based on current wave period of {wavePeriod > 0 ? wavePeriod.toFixed(1) + "s" : "—"}.</div>
@@ -238,8 +243,9 @@ export default function ParametricRollingCalculator() {
               </div>
             </Panel>
           </div>
+          </ErrorBoundary>
         )}
-        {activeTab === "route" && <div style={{ padding: 0 }}><RouteChart shipParams={{ Tr, speed, heading, Lwl: ship.Lwl, B: ship.B, GM: ship.GM, Cb: ship.Cb || 0.75, rollDamping: ship.rollDamping ?? 0.05 }} /></div>}
+        {activeTab === "route" && <div style={{ padding: 0 }}><ErrorBoundary name="Route Chart"><RouteChart shipParams={{ Tr, speed, heading, Lwl: ship.Lwl, B: ship.B, GM: ship.GM, Cb: ship.Cb || 0.75, rollDamping: ship.rollDamping ?? 0.05 }} /></ErrorBoundary></div>}
         {activeTab === "reference" && (
           <div style={{ maxWidth: 800 }}><Panel>{sectionHeader("Parametric Rolling — Theory & Formulas")}
             <div style={{ color: "#CBD5E1", fontSize: 12, lineHeight: 1.8 }}>

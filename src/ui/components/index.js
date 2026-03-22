@@ -11,3 +11,4 @@ export { default as CompassRose } from "./CompassRose.jsx";
 export { default as TimelineChart } from "./TimelineChart.jsx";
 export { default as PolarRiskDiagram } from "./PolarRiskDiagram.jsx";
 export { default as Field } from "./Field.jsx";
+export { default as ErrorBoundary } from "./ErrorBoundary.jsx";
