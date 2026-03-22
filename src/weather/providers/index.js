@@ -20,3 +20,11 @@ import { OPEN_METEO_SOURCES } from "./openMeteo.js";
 import { NOAA_SOURCES } from "./noaaGfs.js";
 
 export const ALL_SOURCES = { ...OPEN_METEO_SOURCES, ...NOAA_SOURCES };
+
+// ── NDBC buoy observations (Phase 3, Item 21) ──
+export {
+  NDBC_BUOYS,
+  fetchBuoy,
+  fetchBuoysInBounds,
+  compareWithForecast,
+} from "./ndbc.js";
