@@ -295,7 +295,7 @@ export default function ParametricRollingCalculator() {
                   <span style={{ fontSize: 9, background: "#16A34A30", color: "#16A34A", padding: "2px 8px", borderRadius: 3, fontWeight: 700 }}>Requires Express bridge</span>
                 </div>
               </div>
-              {[{ name: "NOAA WaveWatch III", desc: "Global wave model 0.5° Hs/Tp/Dir (NOMADS)", status: "Planned" },
+              {[{ name: "NOAA WaveWatch III 0.5°", desc: "Global wave model — Hs/Tp/Dir via NOMADS OPeNDAP", status: "Active" },
                 { name: "Copernicus Marine (CMEMS)", desc: "EU Copernicus Marine Environment Monitoring Service", status: "Active (with credentials)" },
                 { name: "UK Met Office", desc: "Met Office WAVEWATCH III North Atlantic", status: "Planned" },
                 { name: "StormGlass.io", desc: "Multi-source aggregated marine data (free tier: 10 req/day)", status: "Planned" },

@@ -196,9 +196,86 @@ def handle_noaa_gfs(cmd):
             continue
     return {"ok": False, "error": f"All GFS runs failed: {last_err}"}
 
+# ── NOAA WaveWatch III handler — Phase 3, Item 20 ────────────────────────────
+# Fetches wave model data (Hs, Tp, Dir) from NOMADS multi_1 product via OPeNDAP.
+# WW3 uses 0.5° global grid, 3-hourly, updated 4x daily.
+
+def _wwiii_latest_runs():
+    """Yield (date_str, hour_str) for recent WW3 multi_1 runs."""
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    for hours_back in [6, 12, 18, 24, 30, 36]:
+        candidate = now - timedelta(hours=hours_back)
+        run_hour = (candidate.hour // 6) * 6
+        yield candidate.strftime("%Y%m%d"), f"{run_hour:02d}"
+
+def handle_noaa_wwiii(cmd):
+    import xarray as xr
+    s, n = cmd["south"], cmd["north"]
+    w, e = cmd["west"], cmd["east"]
+    forecast_hours = cmd.get("forecast_hours", 120)
+    max_steps = min(forecast_hours // 3, 40)
+
+    # WW3 multi_1 uses 0-360 longitude
+    w360 = w % 360 if w < 0 else w
+    e360 = e % 360 if e < 0 else e
+
+    last_err = None
+    for run_date, run_hour in _wwiii_latest_runs():
+        url = f"https://nomads.ncep.noaa.gov/dods/wave/mww3/{run_date}/multi_1.glo_30m.{run_hour}z"
+        try:
+            ds = xr.open_dataset(url, engine="netcdf4")
+            # WW3 variables: htsgwsfc (Hs), perpwsfc (peak period), dirpwsfc (peak dir)
+            avail_vars = [v for v in ["htsgwsfc", "perpwsfc", "dirpwsfc"] if v in ds]
+            if not avail_vars:
+                last_err = "No wave variables found in dataset"
+                ds.close()
+                continue
+
+            sub = ds[avail_vars].isel(time=slice(0, max_steps)).sel(
+                lat=slice(s, n),
+                lon=slice(w360, e360) if w360 < e360 else slice(0, 360))
+
+            lats = sub.lat.values.tolist()
+            lons = sub.lon.values.tolist()
+            import pandas as pd
+            base_time = pd.Timestamp(f"{run_date} {run_hour}:00", tz="UTC")
+            times_ms = []
+            for t in sub.time.values:
+                try:
+                    times_ms.append(int(pd.Timestamp(t).timestamp() * 1000))
+                except:
+                    times_ms.append(int(base_time.timestamp() * 1000))
+
+            out = []
+            for li, lat in enumerate(lats):
+                for loi, lon in enumerate(lons):
+                    pt = {"lat": round(lat, 3),
+                          "lon": round((lon - 360 if lon > 180 else lon), 3),
+                          "times": times_ms, "source": "noaa_wwiii"}
+                    if "htsgwsfc" in sub:
+                        pt["waveHeight"] = arr_clean(
+                            sub["htsgwsfc"].isel(lat=li, lon=loi).values.tolist())
+                    if "perpwsfc" in sub:
+                        pt["wavePeriod"] = arr_clean(
+                            sub["perpwsfc"].isel(lat=li, lon=loi).values.tolist())
+                    if "dirpwsfc" in sub:
+                        pt["waveDir"] = arr_clean(
+                            sub["dirpwsfc"].isel(lat=li, lon=loi).values.tolist(), 0)
+                    out.append(pt)
+
+            ds.close()
+            return {"ok": True, "data": out,
+                    "run": f"{run_date}/{run_hour}z",
+                    "points": len(out), "steps": len(times_ms)}
+        except Exception as exc:
+            last_err = str(exc)
+            continue
+    return {"ok": False, "error": f"All WW3 runs failed: {last_err}"}
+
 # ── Main loop — read one JSON command per line, write one JSON result ──────────
 HANDLERS = {"test": handle_test, "wave": handle_wave, "physics": handle_physics,
-            "noaa_gfs": handle_noaa_gfs}
+            "noaa_gfs": handle_noaa_gfs, "noaa_wwiii": handle_noaa_wwiii}
 
 print(json.dumps({"ready": True}), flush=True)
 

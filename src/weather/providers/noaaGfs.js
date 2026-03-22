@@ -19,7 +19,10 @@ export const NOAA_SOURCES = {
     name: "NOAA WaveWatch III",
     desc: "Global wave model 0.5° Hs/Tp/Dir (NOMADS)",
     free: true,
-    status: "planned",
+    status: "active",
+    resolution: "0.5°",
+    forecastHours: 180,
+    updateCycle: "4x daily (00/06/12/18z)",
   },
 };
 
@@ -79,7 +82,28 @@ export async function fetchNoaaGfsPoint(lat, lon, forecastHours = 120) {
   });
 }
 
-// ─── WaveWatch III stub (Phase 3, Item 20) ───────────────────────────────────
-export async function fetchNoaaWaveWatch(/* bounds, forecastHours */) {
-  throw new Error("NOAA WaveWatch III provider not yet implemented (Phase 3, Item 20)");
+// ─── WaveWatch III — Phase 3, Item 20 ────────────────────────────────────────
+// Fetches WW3 global 0.5° wave model from NOMADS via Express bridge.
+export async function fetchNoaaWaveWatch(bounds, forecastHours = 120) {
+  const { south, north, west, east } = bounds;
+  const url = `${PROXY_BASE}/api/noaa/wwiii?south=${south}&north=${north}` +
+    `&west=${west}&east=${east}&forecastHours=${forecastHours}`;
+
+  const resp = await fetch(url);
+  if (!resp.ok) {
+    const body = await resp.json().catch(() => ({}));
+    throw new Error(`NOAA WW3: ${body.error || `HTTP ${resp.status}`}`);
+  }
+
+  const result = await resp.json();
+  if (result.error) throw new Error(`NOAA WW3: ${result.error}`);
+  const data = Array.isArray(result) ? result : result.data ?? result;
+  if (!Array.isArray(data)) throw new Error("NOAA WW3: unexpected response format");
+
+  return {
+    results: data,
+    provider: "noaa_wwiii",
+    run: result.run || null,
+    fetchedAt: Date.now(),
+  };
 }

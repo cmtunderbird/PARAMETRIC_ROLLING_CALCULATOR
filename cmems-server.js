@@ -253,6 +253,21 @@ app.get("/api/noaa/gfs", async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── /api/noaa/wwiii — Phase 3, Item 20 ────────────────────────────────────────
+app.get("/api/noaa/wwiii", async (req, res) => {
+  const { south, north, west, east, forecastHours = 120 } = req.query;
+  try {
+    const result = await workerCall({
+      action: "noaa_wwiii",
+      south: parseFloat(south), north: parseFloat(north),
+      west:  parseFloat(west),  east:  parseFloat(east),
+      forecast_hours: parseInt(forecastHours),
+    });
+    if (result.error) return res.status(500).json(result);
+    res.json(result.data ?? result);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Health ────────────────────────────────────────────────────────────────────
 app.get("/api/health",       (_, res) => res.json({ ok: true, server: "cmems-proxy", version: "2.1", workerReady }));
 app.get("/api/cmems/health", (_, res) => res.json({ ok: true, server: "cmems-proxy", version: "2.1", workerReady }));
