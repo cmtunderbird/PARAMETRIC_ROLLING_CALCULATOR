@@ -23,6 +23,7 @@ import { generateRecommendation } from "./core/riskEngine.js";
 import {
   PolarRiskDiagram, inputStyle, sectionHeader, Panel, ErrorBoundary,
   StaleDataBanner, ManualWeatherEntry, ResumeSessionDialog, SpeedHeadingMatrix,
+  MultiConditionAssessment,
   nauticalToDecimal, formatNauticalLat, formatNauticalLon,
 } from "./ui/components/index.js";
 
@@ -221,6 +222,11 @@ export default function ParametricRollingCalculator() {
             swellHeight_m={swellHeight} swellPeriod_s={swellPeriod} swellDir_deg={swellDir}
             windSpeed_kts={windSpeed_kts} ship={ship}
             currentHeading={heading} currentSpeed={speed}
+          />}
+          {marineData && <MultiConditionAssessment preset={preset} ship={ship}
+            waveHeight={waveHeight} wavePeriod={wavePeriod} waveDir={waveDir}
+            swellHeight={swellHeight} swellPeriod={swellPeriod} swellDir={swellDir}
+            heading={heading} speed={speed} windSpeed_kts={windSpeed_kts}
           />}
           <Dashboard
             latDeg={latDeg} latMin={latMin} latHemi={latHemi} setLatDeg={setLatDeg} setLatMin={setLatMin} setLatHemi={setLatHemi}
