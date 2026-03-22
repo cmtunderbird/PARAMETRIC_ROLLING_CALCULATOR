@@ -1,4 +1,4 @@
-import { useCallback, useState, useEffect } from "react";
+import { useCallback, useState, useEffect, useMemo } from "react";
 import RouteChart from "./RouteChart.jsx";
 import { cacheGet, cacheSet } from "./weatherCache.js";
 import { sanitizeWxSnapshot } from "./weatherValidation.js";
@@ -19,6 +19,7 @@ import { useAppState, useAppActions, PRESETS } from "./state/appStore.jsx";
 import Dashboard, { LOCATIONS } from "./ui/Dashboard.jsx";
 import VesselConfig from "./ui/VesselConfig.jsx";
 import DecisionBrief from "./ui/DecisionBrief.jsx";
+import { generateRecommendation } from "./core/riskEngine.js";
 import {
   PolarRiskDiagram, inputStyle, sectionHeader, Panel, ErrorBoundary,
   StaleDataBanner, ManualWeatherEntry, ResumeSessionDialog,
@@ -88,6 +89,22 @@ export default function ParametricRollingCalculator() {
   const motionStatus = getMotionStatus(motions, waveHeight, windSpeed_kts);
   const speedLossPct = waveHeight > 0 ? calcKwonSpeedLossPct(waveHeight, waveDir ?? heading, heading, ship.Cb ?? 0.75, ship.Lwl) : 0;
   const paramRisk3factor = motions?.paramRisk ?? 0;
+
+  // ── Recommendation corridors for polar diagram (Phase 2, Item 14) ──
+  const recommendation = useMemo(() => {
+    if (!waveHeight || !wavePeriod || !ship?.Lwl) return null;
+    return generateRecommendation({
+      waveHeight_m: waveHeight, wavePeriod_s: wavePeriod, waveDir_deg: waveDir,
+      swellHeight_m: swellHeight, swellPeriod_s: swellPeriod, swellDir_deg: swellDir,
+      Lwl: ship.Lwl, B: ship.B, GM: ship.GM, d: ship.d,
+      rollDamping: ship.rollDamping ?? 0.05,
+      bowFreeboard: ship.bowFreeboard ?? 6.0,
+      fp_from_midship: ship.fp_from_midship ?? (ship.Lwl / 2),
+      bridge_from_midship: ship.bridge_from_midship ?? -(ship.Lwl * 0.4),
+      windSpeed_kts, currentHeading: heading, currentSpeed: speed,
+    });
+  }, [waveHeight, wavePeriod, waveDir, swellHeight, swellPeriod, swellDir,
+      ship, windSpeed_kts, heading, speed]);
 
   // ── Data fetch — dispatches to store ──
   const fetchData = useCallback(async () => {
@@ -268,7 +285,10 @@ export default function ParametricRollingCalculator() {
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
             <Panel>{sectionHeader("Parametric Roll Risk Polar")}
               <div style={{ color: "#94A3B8", fontSize: 10, marginBottom: 8 }}>Risk intensity by relative heading angle. Center = maximum danger (ratio = 1.0). Based on current wave period of {wavePeriod > 0 ? wavePeriod.toFixed(1) + "s" : "—"}.</div>
-              <PolarRiskDiagram shipParams={{ ...shipParams, wavePeriod: wavePeriod || 10, Tr }} />
+              <PolarRiskDiagram shipParams={{ ...shipParams, wavePeriod: wavePeriod || 10, Tr }}
+                safeCorridors={recommendation?.safeCorridors}
+                avoidCorridors={recommendation?.avoidCorridors}
+                currentHeading={heading} />
             </Panel>
             <Panel>{sectionHeader("Speed / Heading Matrix")}
               <div style={{ color: "#94A3B8", fontSize: 10, marginBottom: 8 }}>Parametric ratio (Tᵣ / 2Tₑ) for various speed/heading combinations. Tw = {wavePeriod > 0 ? wavePeriod.toFixed(1) + "s" : "10s"}</div>
