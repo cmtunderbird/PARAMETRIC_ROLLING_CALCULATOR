@@ -25,6 +25,7 @@ import VoyagePlan from "./ui/route/VoyagePlan.jsx";
 import WeatherProviderPanel from "./ui/route/WeatherProviderPanel.jsx";
 import SynopticOverlayPanel from "./ui/route/SynopticOverlayPanel.jsx";
 import VoyageRiskTimeline from "./ui/route/VoyageRiskTimeline.jsx";
+import RouteRiskScan from "./ui/route/RouteRiskScan.jsx";
 import { riskColor, panelBg, btnSt, inputSt, SH, Panel } from "./ui/route/shared.jsx";
 
 delete L.Icon.Default.prototype._getIconUrl;
@@ -540,6 +541,9 @@ export default function RouteChart({ shipParams }) {
 
         <VoyageRiskTimeline voyageWeather={voyageWeather} voyageWPs={voyageWPs}
           bospDT={bospDT} maxRisk={maxRisk} voyageDaysStr={voyageDaysStr} />
+
+        <RouteRiskScan voyageWeather={voyageWeather} voyageWPs={voyageWPs}
+          shipParams={shipParams} voyageSpeed={voyageSpeed} />
 
         {/* Route Stats (no weather) */}
         {route && !voyageWeather && routeStats && (
