@@ -9,6 +9,8 @@ export {
 export {
   NOAA_SOURCES,
   fetchNoaaGfs,
+  fetchNoaaGfsPoint,
+  isNoaaGfsAvailable,
   fetchNoaaWaveWatch,
 } from "./noaaGfs.js";
 

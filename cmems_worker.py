@@ -119,8 +119,86 @@ def handle_physics(cmd):
             out.append(pt)
     return out
 
+# ── NOAA GFS handler — Phase 3, Item 19 ──────────────────────────────────────
+# Fetches 10m wind (U/V → speed/dir) + MSLP from GFS 0.25° via NOMADS OPeNDAP.
+# No API key required. Uses xarray + netCDF4 for direct OPeNDAP access.
+
+def _gfs_latest_runs():
+    """Yield (date_str, hour_str) for recent GFS runs, newest first.
+    GFS runs at 00/06/12/18z; data available ~4.5h after run start."""
+    from datetime import datetime, timedelta, timezone
+    now = datetime.now(timezone.utc)
+    for hours_back in [5, 11, 17, 23, 29, 35]:
+        candidate = now - timedelta(hours=hours_back)
+        run_hour = (candidate.hour // 6) * 6
+        yield candidate.strftime("%Y%m%d"), f"{run_hour:02d}"
+
+def handle_noaa_gfs(cmd):
+    import xarray as xr
+    s, n = cmd["south"], cmd["north"]
+    w, e = cmd["west"], cmd["east"]
+    forecast_hours = cmd.get("forecast_hours", 120)
+    max_steps = min(forecast_hours // 3, 40)  # GFS 0.25 is 3-hourly
+
+    # Normalise longitudes to 0-360 for GFS grid
+    w360 = w % 360 if w < 0 else w
+    e360 = e % 360 if e < 0 else e
+
+    last_err = None
+    for run_date, run_hour in _gfs_latest_runs():
+        url = f"https://nomads.ncep.noaa.gov/dods/gfs_0p25/gfs{run_date}/gfs_0p25_{run_hour}z"
+        try:
+            ds = xr.open_dataset(url, engine="netcdf4")
+            sub = ds[["ugrd10m", "vgrd10m", "prmslmsl"]].isel(
+                time=slice(0, max_steps)
+            ).sel(lat=slice(s, n),
+                  lon=slice(w360, e360) if w360 < e360 else slice(0, 360))
+
+            lats = sub.lat.values.tolist()
+            lons = sub.lon.values.tolist()
+            import pandas as pd
+            base_time = pd.Timestamp(f"{run_date} {run_hour}:00", tz="UTC")
+            times_ms = []
+            for t in sub.time.values:
+                try:
+                    times_ms.append(int(pd.Timestamp(t).timestamp() * 1000))
+                except:
+                    times_ms.append(int(base_time.timestamp() * 1000))
+
+            out = []
+            for li, lat in enumerate(lats):
+                for loi, lon in enumerate(lons):
+                    u_arr = sub["ugrd10m"].isel(lat=li, lon=loi).values
+                    v_arr = sub["vgrd10m"].isel(lat=li, lon=loi).values
+                    p_arr = sub["prmslmsl"].isel(lat=li, lon=loi).values
+                    speed_kts, wind_dir, mslp = [], [], []
+                    for ti in range(len(u_arr)):
+                        u = float(u_arr[ti]) if math.isfinite(float(u_arr[ti])) else 0
+                        v = float(v_arr[ti]) if math.isfinite(float(v_arr[ti])) else 0
+                        spd_ms = math.sqrt(u*u + v*v)
+                        speed_kts.append(round(spd_ms / 0.51444, 1))
+                        d = (math.degrees(math.atan2(-u, -v)) + 360) % 360
+                        wind_dir.append(round(d, 0))
+                        p = float(p_arr[ti])
+                        mslp.append(round(p / 100, 1) if math.isfinite(p) else None)
+                    disp_lon = lon - 360 if lon > 180 else lon
+                    out.append({
+                        "lat": round(lat, 3), "lon": round(disp_lon, 3),
+                        "times": times_ms, "source": "noaa_gfs",
+                        "windKts": speed_kts, "windDir": wind_dir, "mslp": mslp,
+                    })
+            ds.close()
+            return {"ok": True, "data": out,
+                    "run": f"{run_date}/{run_hour}z",
+                    "points": len(out), "steps": len(times_ms)}
+        except Exception as exc:
+            last_err = str(exc)
+            continue
+    return {"ok": False, "error": f"All GFS runs failed: {last_err}"}
+
 # ── Main loop — read one JSON command per line, write one JSON result ──────────
-HANDLERS = {"test": handle_test, "wave": handle_wave, "physics": handle_physics}
+HANDLERS = {"test": handle_test, "wave": handle_wave, "physics": handle_physics,
+            "noaa_gfs": handle_noaa_gfs}
 
 print(json.dumps({"ready": True}), flush=True)
 

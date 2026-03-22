@@ -280,9 +280,23 @@ export default function ParametricRollingCalculator() {
                 </div>
               ))}
             </Panel>
-            <Panel style={{ marginTop: 12 }}>{sectionHeader("Additional Sources (Coming Soon)")}
-              {[{ name: "NOAA GFS Wave Model", desc: "NOAA Global Forecast System wave data (WAVEWATCH III)", status: "Planned" },
-                { name: "Copernicus Marine (CMEMS)", desc: "EU Copernicus Marine Environment Monitoring Service", status: "Planned" },
+            <Panel style={{ marginTop: 12 }}>{sectionHeader("NOAA Direct Sources (via Express Bridge)")}
+              <div style={{ padding: 12, marginBottom: 8, background: "#0F172A", borderRadius: 6, border: "1px solid #16A34A50" }}>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <div>
+                    <div style={{ color: "#E2E8F0", fontSize: 13, fontWeight: 700 }}>NOAA GFS 0.25°</div>
+                    <div style={{ color: "#64748B", fontSize: 10, marginTop: 2 }}>Global Forecast System — 10m wind + MSLP via NOMADS OPeNDAP</div>
+                    <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
+                      <span style={{ fontSize: 9, background: "#16A34A30", color: "#16A34A", padding: "2px 6px", borderRadius: 3, fontWeight: 700 }}>FREE</span>
+                      <span style={{ fontSize: 9, background: "#16A34A30", color: "#16A34A", padding: "2px 6px", borderRadius: 3 }}>ACTIVE</span>
+                      <span style={{ fontSize: 9, background: "#3B82F630", color: "#3B82F6", padding: "2px 6px", borderRadius: 3 }}>0.25° / 3-hourly</span>
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 9, background: "#16A34A30", color: "#16A34A", padding: "2px 8px", borderRadius: 3, fontWeight: 700 }}>Requires Express bridge</span>
+                </div>
+              </div>
+              {[{ name: "NOAA WaveWatch III", desc: "Global wave model 0.5° Hs/Tp/Dir (NOMADS)", status: "Planned" },
+                { name: "Copernicus Marine (CMEMS)", desc: "EU Copernicus Marine Environment Monitoring Service", status: "Active (with credentials)" },
                 { name: "UK Met Office", desc: "Met Office WAVEWATCH III North Atlantic", status: "Planned" },
                 { name: "StormGlass.io", desc: "Multi-source aggregated marine data (free tier: 10 req/day)", status: "Planned" },
               ].map((src, i) => (

@@ -237,6 +237,22 @@ app.get("/api/cmems/physics", async (req, res) => {
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
+// ── /api/noaa/gfs — Phase 3, Item 19 ──────────────────────────────────────────
+// No authentication required — NOAA data is free and open
+app.get("/api/noaa/gfs", async (req, res) => {
+  const { south, north, west, east, forecastHours = 120 } = req.query;
+  try {
+    const result = await workerCall({
+      action: "noaa_gfs",
+      south: parseFloat(south), north: parseFloat(north),
+      west:  parseFloat(west),  east:  parseFloat(east),
+      forecast_hours: parseInt(forecastHours),
+    });
+    if (result.error) return res.status(500).json(result);
+    res.json(result.data ?? result);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── Health ────────────────────────────────────────────────────────────────────
 app.get("/api/health",       (_, res) => res.json({ ok: true, server: "cmems-proxy", version: "2.1", workerReady }));
 app.get("/api/cmems/health", (_, res) => res.json({ ok: true, server: "cmems-proxy", version: "2.1", workerReady }));
