@@ -29,6 +29,7 @@ import {
 
 // ── Weather providers (Phase 1, Item 4) ──
 import { OPEN_METEO_SOURCES, fetchOpenMeteo } from "./weather/providers/index.js";
+import { isNoaaGfsAvailable } from "./weather/providers/noaaGfs.js";
 import { saveSession } from "./services/sessionStore.js";
 // Alias for backward compat with Weather Sources tab
 const WEATHER_SOURCES = OPEN_METEO_SOURCES;
@@ -165,6 +166,15 @@ export default function ParametricRollingCalculator() {
   }, [actions]);
   const handleStartFresh = useCallback(() => setShowResume(false), []);
 
+  // ── Express bridge health check (for NOAA status display) ──
+  const [bridgeOnline, setBridgeOnline] = useState(false);
+  useEffect(() => {
+    const check = () => isNoaaGfsAvailable().then(setBridgeOnline).catch(() => setBridgeOnline(false));
+    check();
+    const iv = setInterval(check, 30000); // re-check every 30s
+    return () => clearInterval(iv);
+  }, []);
+
   // ── Adapter functions for child components ──
   const setLatDeg = v => actions.setLat({ deg: v });
   const setLatMin = v => actions.setLat({ min: v });
@@ -281,18 +291,25 @@ export default function ParametricRollingCalculator() {
               ))}
             </Panel>
             <Panel style={{ marginTop: 12 }}>{sectionHeader("NOAA Direct Sources (via Express Bridge)")}
-              <div style={{ padding: 12, marginBottom: 8, background: "#0F172A", borderRadius: 6, border: "1px solid #16A34A50" }}>
+              <div style={{ padding: 12, marginBottom: 8, background: "#0F172A", borderRadius: 6, border: `1px solid ${bridgeOnline ? "#16A34A50" : "#F59E0B50"}` }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <div>
                     <div style={{ color: "#E2E8F0", fontSize: 13, fontWeight: 700 }}>NOAA GFS 0.25°</div>
                     <div style={{ color: "#64748B", fontSize: 10, marginTop: 2 }}>Global Forecast System — 10m wind + MSLP via NOMADS OPeNDAP</div>
                     <div style={{ display: "flex", gap: 8, marginTop: 4 }}>
                       <span style={{ fontSize: 9, background: "#16A34A30", color: "#16A34A", padding: "2px 6px", borderRadius: 3, fontWeight: 700 }}>FREE</span>
-                      <span style={{ fontSize: 9, background: "#16A34A30", color: "#16A34A", padding: "2px 6px", borderRadius: 3 }}>ACTIVE</span>
+                      <span style={{ fontSize: 9, background: bridgeOnline ? "#16A34A30" : "#64748B30",
+                        color: bridgeOnline ? "#16A34A" : "#64748B",
+                        padding: "2px 6px", borderRadius: 3, fontWeight: 700 }}>{bridgeOnline ? "ACTIVE" : "OFFLINE"}</span>
                       <span style={{ fontSize: 9, background: "#3B82F630", color: "#3B82F6", padding: "2px 6px", borderRadius: 3 }}>0.25° / 3-hourly</span>
                     </div>
                   </div>
-                  <span style={{ fontSize: 9, background: "#16A34A30", color: "#16A34A", padding: "2px 8px", borderRadius: 3, fontWeight: 700 }}>Requires Express bridge</span>
+                  <span style={{ fontSize: 9,
+                    background: bridgeOnline ? "#16A34A30" : "#F59E0B30",
+                    color: bridgeOnline ? "#16A34A" : "#F59E0B",
+                    padding: "2px 8px", borderRadius: 3, fontWeight: 700 }}>
+                    {bridgeOnline ? "✓ Bridge connected" : "⚠ Bridge offline"}
+                  </span>
                 </div>
               </div>
               {[{ name: "NOAA WaveWatch III 0.5°", desc: "Global wave model — Hs/Tp/Dir via NOMADS OPeNDAP", status: "Active" },
