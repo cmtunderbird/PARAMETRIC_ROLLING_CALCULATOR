@@ -290,7 +290,13 @@ export default function ParametricRollingCalculator() {
                 </div>
               ))}
             </Panel>
-            <Panel style={{ marginTop: 12 }}>{sectionHeader("NOAA Direct Sources (via Express Bridge)")}
+            <Panel style={{ marginTop: 12 }}>{sectionHeader("Primary Data Sources (via Express Bridge)")}
+              <div style={{ color: "#94A3B8", fontSize: 9, marginBottom: 10, padding: "4px 8px",
+                background: "#0F172A80", borderRadius: 3, border: "1px solid #33415550", lineHeight: 1.5 }}>
+                Priority: <b style={{ color: "#22C55E" }}>NOAA WW3</b> (marine) → <b style={{ color: "#3B82F6" }}>Open-Meteo</b> (fallback)
+                &nbsp;|&nbsp; <b style={{ color: "#22C55E" }}>NOAA GFS</b> (wind) → <b style={{ color: "#3B82F6" }}>Open-Meteo</b> (fallback)
+                &nbsp;|&nbsp; <b style={{ color: "#A855F7" }}>CMEMS</b> (hi-res when available)
+              </div>
               <div style={{ padding: 12, marginBottom: 8, background: "#0F172A", borderRadius: 6, border: `1px solid ${bridgeOnline ? "#16A34A50" : "#F59E0B50"}` }}>
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
                   <div>
@@ -312,14 +318,35 @@ export default function ParametricRollingCalculator() {
                   </span>
                 </div>
               </div>
-              {[{ name: "NOAA WaveWatch III 0.5°", desc: "Global wave model — Hs/Tp/Dir via NOMADS OPeNDAP", status: "Active" },
-                { name: "Copernicus Marine (CMEMS)", desc: "EU Copernicus Marine Environment Monitoring Service", status: "Active (with credentials)" },
-                { name: "UK Met Office", desc: "Met Office WAVEWATCH III North Atlantic", status: "Planned" },
-                { name: "StormGlass.io", desc: "Multi-source aggregated marine data (free tier: 10 req/day)", status: "Planned" },
+              {[{ name: "NOAA WaveWatch III 0.5°", desc: "Global wave model — Hs/Tp/Dir via NOMADS OPeNDAP",
+                    active: bridgeOnline, badges: ["FREE", "0.5° / 3-hourly"] },
+                { name: "Copernicus Marine (CMEMS)", desc: "EU Copernicus Marine Environment Monitoring Service — Hi-Res 0.083° wave + currents",
+                    active: bridgeOnline, badges: ["0.083° / 3-hourly", "Requires credentials"] },
+              ].map((src, i) => (
+                <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 12, marginBottom: 8, background: "#0F172A", borderRadius: 6,
+                  border: `1px solid ${src.active ? "#16A34A50" : "#33415570"}` }}>
+                  <div>
+                    <div style={{ color: "#E2E8F0", fontSize: 13, fontWeight: 700 }}>{src.name}</div>
+                    <div style={{ color: "#64748B", fontSize: 10, marginTop: 2 }}>{src.desc}</div>
+                    <div style={{ display: "flex", gap: 6, marginTop: 4, flexWrap: "wrap" }}>
+                      {src.badges?.map((b, j) => (
+                        <span key={j} style={{ fontSize: 9, background: "#3B82F620", color: "#3B82F6", padding: "2px 6px", borderRadius: 3 }}>{b}</span>
+                      ))}
+                    </div>
+                  </div>
+                  <span style={{ fontSize: 9, background: src.active ? "#16A34A30" : "#64748B30",
+                    color: src.active ? "#16A34A" : "#64748B",
+                    padding: "2px 8px", borderRadius: 3, fontWeight: 700 }}>{src.active ? "✓ Active" : "Offline"}</span>
+                </div>
+              ))}
+
+              {sectionHeader("Planned Sources")}
+              {[{ name: "UK Met Office", desc: "Met Office WAVEWATCH III North Atlantic" },
+                { name: "StormGlass.io", desc: "Multi-source aggregated marine data (free tier: 10 req/day)" },
               ].map((src, i) => (
                 <div key={i} style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: 12, marginBottom: 8, background: "#0F172A", borderRadius: 6, border: "1px solid #334155", opacity: 0.5 }}>
                   <div><div style={{ color: "#E2E8F0", fontSize: 13, fontWeight: 700 }}>{src.name}</div><div style={{ color: "#64748B", fontSize: 10, marginTop: 2 }}>{src.desc}</div></div>
-                  <span style={{ fontSize: 9, background: "#64748B30", color: "#64748B", padding: "2px 8px", borderRadius: 3, fontWeight: 700 }}>{src.status}</span>
+                  <span style={{ fontSize: 9, background: "#64748B30", color: "#64748B", padding: "2px 8px", borderRadius: 3, fontWeight: 700 }}>Planned</span>
                 </div>
               ))}
             </Panel>
