@@ -18,3 +18,4 @@ export { default as ResumeSessionDialog } from "./ResumeSessionDialog.jsx";
 export { default as SpeedHeadingMatrix } from "./SpeedHeadingMatrix.jsx";
 export { default as MultiConditionAssessment } from "./MultiConditionAssessment.jsx";
 export { default as SeaSwellResonanceCheck } from "./SeaSwellResonanceCheck.jsx";
+export { default as ConfidenceScore } from "./ConfidenceScore.jsx";

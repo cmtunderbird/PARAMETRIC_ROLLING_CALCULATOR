@@ -23,7 +23,7 @@ import { generateRecommendation } from "./core/riskEngine.js";
 import {
   PolarRiskDiagram, inputStyle, sectionHeader, Panel, ErrorBoundary,
   StaleDataBanner, ManualWeatherEntry, ResumeSessionDialog, SpeedHeadingMatrix,
-  MultiConditionAssessment, SeaSwellResonanceCheck,
+  MultiConditionAssessment, SeaSwellResonanceCheck, ConfidenceScore,
   nauticalToDecimal, formatNauticalLat, formatNauticalLon,
 } from "./ui/components/index.js";
 
@@ -201,6 +201,8 @@ export default function ParametricRollingCalculator() {
           {!isFinite(costFactor) && marineData && (<div style={{ background: "#7C3AED20", border: "1px solid #7C3AED", borderRadius: 4, padding: "4px 12px", color: "#C4B5FD", fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", animation: "pulse 1s infinite" }}>🚫 FORBIDDEN CONDITIONS</div>)}
           {isFinite(costFactor) && costFactor >= 2 && marineData && (<div style={{ background: "#DC262620", border: "1px solid #DC2626", borderRadius: 4, padding: "4px 12px", color: "#FCA5A5", fontSize: 11, fontWeight: 700, letterSpacing: "0.1em", animation: "pulse 1.5s infinite" }}>⚠ DANGEROUS MOTIONS</div>)}
           {lastFetch && (<div style={{ color: "#64748B", fontSize: 9 }}>Updated: {lastFetch.toLocaleTimeString()}</div>)}
+          {marineData && <ConfidenceScore lastFetch={lastFetch} activeSources={activeSources}
+            marineData={marineData} hourIdx={hourIdx} waveHeight={waveHeight} wavePeriod={wavePeriod} compact />}
           <div style={{ color: "#22D3EE", fontSize: 10, fontWeight: 600, fontFamily: "'JetBrains Mono', monospace", background: "#0F172A", padding: "4px 10px", borderRadius: 4, border: "1px solid #334155", lineHeight: 1.5, textAlign: "center" }}>
             <div>{formatNauticalLat(latDeg, latMin, latHemi)}</div>
             <div>{formatNauticalLon(lonDeg, lonMin, lonHemi)}</div>
@@ -233,6 +235,8 @@ export default function ParametricRollingCalculator() {
             swellHeight={swellHeight} swellPeriod={swellPeriod} swellDir={swellDir}
             heading={heading} speed={speed} ship={ship}
           />}
+          {marineData && <ConfidenceScore lastFetch={lastFetch} activeSources={activeSources}
+            marineData={marineData} hourIdx={hourIdx} waveHeight={waveHeight} wavePeriod={wavePeriod} />}
           <Dashboard
             latDeg={latDeg} latMin={latMin} latHemi={latHemi} setLatDeg={setLatDeg} setLatMin={setLatMin} setLatHemi={setLatHemi}
             lonDeg={lonDeg} lonMin={lonMin} lonHemi={lonHemi} setLonDeg={setLonDeg} setLonMin={setLonMin} setLonHemi={setLonHemi}
