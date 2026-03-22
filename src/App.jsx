@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState, useEffect } from "react";
 import RouteChart from "./RouteChart.jsx";
 import { cacheGet, cacheSet } from "./weatherCache.js";
 import { sanitizeWxSnapshot } from "./weatherValidation.js";
@@ -20,12 +20,13 @@ import Dashboard, { LOCATIONS } from "./ui/Dashboard.jsx";
 import VesselConfig from "./ui/VesselConfig.jsx";
 import {
   PolarRiskDiagram, inputStyle, sectionHeader, Panel, ErrorBoundary,
-  StaleDataBanner, ManualWeatherEntry,
+  StaleDataBanner, ManualWeatherEntry, ResumeSessionDialog,
   nauticalToDecimal, formatNauticalLat, formatNauticalLon,
 } from "./ui/components/index.js";
 
 // ── Weather providers (Phase 1, Item 4) ──
 import { OPEN_METEO_SOURCES, fetchOpenMeteo } from "./weather/providers/index.js";
+import { saveSession } from "./services/sessionStore.js";
 // Alias for backward compat with Weather Sources tab
 const WEATHER_SOURCES = OPEN_METEO_SOURCES;
 async function fetchWeatherData(sourceKey, lat, lon) {
@@ -125,6 +126,26 @@ export default function ParametricRollingCalculator() {
     actions.fetchDone(marine, wind);
   }, [actions]);
 
+  // ── Session persistence (Phase 1, Item 10) ──
+  const [showResume, setShowResume] = useState(true);
+  useEffect(() => {
+    if (!marineData || !lastFetch) return;
+    saveSession({
+      vesselName: ship.name || PRESETS[preset]?.name || "Custom",
+      position: `${latDeg}°${latMin.toFixed(1)}'${latHemi} ${lonDeg}°${lonMin.toFixed(1)}'${lonHemi}`,
+      hasWeather: !!marineData,
+      hasRoute: false, // will be true when route state moves to store
+      marineData, windData, preset, lastFetch: lastFetch.toISOString(),
+    }).catch(() => {});
+  }, [marineData, windData, lastFetch]);
+
+  const handleResume = useCallback((session) => {
+    setShowResume(false);
+    if (session.marineData) actions.fetchDone(session.marineData, session.windData);
+    if (session.preset && PRESETS[session.preset]) actions.applyPreset(session.preset);
+  }, [actions]);
+  const handleStartFresh = useCallback(() => setShowResume(false), []);
+
   // ── Adapter functions for child components ──
   const setLatDeg = v => actions.setLat({ deg: v });
   const setLatMin = v => actions.setLat({ min: v });
@@ -146,6 +167,7 @@ export default function ParametricRollingCalculator() {
 
   return (
     <div style={{ fontFamily: "'JetBrains Mono', 'Fira Code', monospace", background: "linear-gradient(135deg, #0B1120 0%, #0F172A 50%, #111827 100%)", color: "#E2E8F0", minHeight: "100vh", padding: 0 }}>
+      {showResume && <ResumeSessionDialog onResume={handleResume} onStartFresh={handleStartFresh} />}
       {/* ─ Header ─ */}
       <div style={{ background: "linear-gradient(90deg, #0F172A, #1E293B, #0F172A)", borderBottom: "2px solid #F59E0B", padding: "12px 24px", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
