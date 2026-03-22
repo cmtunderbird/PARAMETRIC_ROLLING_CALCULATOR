@@ -22,7 +22,7 @@ import DecisionBrief from "./ui/DecisionBrief.jsx";
 import { generateRecommendation } from "./core/riskEngine.js";
 import {
   PolarRiskDiagram, inputStyle, sectionHeader, Panel, ErrorBoundary,
-  StaleDataBanner, ManualWeatherEntry, ResumeSessionDialog,
+  StaleDataBanner, ManualWeatherEntry, ResumeSessionDialog, SpeedHeadingMatrix,
   nauticalToDecimal, formatNauticalLat, formatNauticalLon,
 } from "./ui/components/index.js";
 
@@ -292,17 +292,9 @@ export default function ParametricRollingCalculator() {
             </Panel>
             <Panel>{sectionHeader("Speed / Heading Matrix")}
               <div style={{ color: "#94A3B8", fontSize: 10, marginBottom: 8 }}>Parametric ratio (Tᵣ / 2Tₑ) for various speed/heading combinations. Tw = {wavePeriod > 0 ? wavePeriod.toFixed(1) + "s" : "10s"}</div>
-              <div style={{ overflowX: "auto" }}>
-                <table style={{ borderCollapse: "collapse", width: "100%", fontSize: 10, fontFamily: "'JetBrains Mono', monospace" }}>
-                  <thead><tr><th style={{ padding: "4px 6px", color: "#F59E0B", borderBottom: "1px solid #334155", textAlign: "left" }}>Spd\Hdg</th>
-                    {[0,15,30,45,60,75,90,120,150,180].map(a => <th key={a} style={{ padding: "4px 4px", color: "#94A3B8", borderBottom: "1px solid #334155", textAlign: "center" }}>{a}°</th>)}
-                  </tr></thead>
-                  <tbody>{[4,8,12,16,20,24].map(s => <tr key={s}><td style={{ padding: "4px 6px", color: "#E2E8F0", fontWeight: 700, borderBottom: "1px solid #1E293B" }}>{s}kt</td>
-                    {[0,15,30,45,60,75,90,120,150,180].map(a => { const tw=wavePeriod||10; const te=calcEncounterPeriod(tw,s,a); const ratio=calcParametricRiskRatio(Tr,te); const risk=getRiskLevel(ratio);
-                      return <td key={a} style={{ padding: "4px 4px", textAlign: "center", background: risk.color+"20", color: risk.color, fontWeight: risk.severity>=3?800:400, borderBottom: "1px solid #1E293B" }}>{ratio!==null&&isFinite(ratio)?ratio.toFixed(2):"∞"}</td>; })}
-                  </tr>)}</tbody>
-                </table>
-              </div>
+              <SpeedHeadingMatrix Tr={Tr} wavePeriod={wavePeriod} waveHeight={waveHeight}
+                waveDir={waveDir} heading={heading} speed={speed} ship={ship}
+                windSpeed_kts={windSpeed_kts} recommendation={recommendation} />
             </Panel>
           </div>
           </ErrorBoundary>
