@@ -20,6 +20,7 @@ import Dashboard, { LOCATIONS } from "./ui/Dashboard.jsx";
 import VesselConfig from "./ui/VesselConfig.jsx";
 import {
   PolarRiskDiagram, inputStyle, sectionHeader, Panel, ErrorBoundary,
+  StaleDataBanner, ManualWeatherEntry,
   nauticalToDecimal, formatNauticalLat, formatNauticalLon,
 } from "./ui/components/index.js";
 
@@ -114,6 +115,14 @@ export default function ParametricRollingCalculator() {
 
   const shipParams = { Tr, speed, relHeading, wavePeriod };
 
+  // ── Offline / stale-cache indicators (Phase 1, Item 8) ──
+  const dataAgeMinutes = lastFetch ? (Date.now() - lastFetch.getTime()) / 60000 : null;
+  const isStale = dataAgeMinutes !== null && dataAgeMinutes > 30;
+  const isOffline = !!error && !marineData;
+  const handleManualWeather = useCallback((marine, wind) => {
+    actions.fetchDone(marine, wind);
+  }, [actions]);
+
   // ── Adapter functions for child components ──
   const setLatDeg = v => actions.setLat({ deg: v });
   const setLatMin = v => actions.setLat({ min: v });
@@ -163,6 +172,8 @@ export default function ParametricRollingCalculator() {
       <div style={{ padding: "16px 24px" }}>
         {activeTab === "dashboard" && (
           <ErrorBoundary name="Dashboard">
+          <StaleDataBanner lastFetch={lastFetch} dataAgeMinutes={dataAgeMinutes} isStale={isStale} isOffline={isOffline} />
+          {isOffline && <ManualWeatherEntry onApply={handleManualWeather} />}
           <Dashboard
             latDeg={latDeg} latMin={latMin} latHemi={latHemi} setLatDeg={setLatDeg} setLatMin={setLatMin} setLatHemi={setLatHemi}
             lonDeg={lonDeg} lonMin={lonMin} lonHemi={lonHemi} setLonDeg={setLonDeg} setLonMin={setLonMin} setLonHemi={setLonHemi}
