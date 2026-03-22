@@ -1,0 +1,125 @@
+{
+  "container_large": {
+    "name": "Large Container (14,000 TEU)",
+    "type": "container",
+    "Lwl": 350, "B": 48.2, "d": 14.5, "GM": 1.8, "Cb": 0.65,
+    "rollDamping": 0.05,
+    "bowFreeboard": 8.0,
+    "fp_from_midship": 175.0,
+    "bridge_from_midship": -140.0,
+    "conditions": {
+      "laden": { "d": 14.5, "GM": 1.8, "Cb": 0.65, "bowFreeboard": 8.0 },
+      "ballast": { "d": 9.0, "GM": 3.5, "Cb": 0.55, "bowFreeboard": 13.5 }
+    },
+    "notes": "Post-Panamax. High GM in ballast increases parametric risk."
+  },
+  "container_med": {
+    "name": "Medium Container (4,000 TEU)",
+    "type": "container",
+    "Lwl": 260, "B": 32.2, "d": 12.0, "GM": 1.5, "Cb": 0.62,
+    "rollDamping": 0.05,
+    "bowFreeboard": 7.0,
+    "fp_from_midship": 130.0,
+    "bridge_from_midship": -105.0,
+    "conditions": {
+      "laden": { "d": 12.0, "GM": 1.5, "Cb": 0.62, "bowFreeboard": 7.0 },
+      "ballast": { "d": 7.5, "GM": 2.8, "Cb": 0.52, "bowFreeboard": 11.5 }
+    },
+    "notes": "Panamax class. Most common parametric rolling incidents."
+  },
+  "container_small": {
+    "name": "Small Container (1,000 TEU)",
+    "type": "container",
+    "Lwl": 150, "B": 25.0, "d": 8.5, "GM": 1.2, "Cb": 0.60,
+    "rollDamping": 0.06,
+    "bowFreeboard": 5.5,
+    "fp_from_midship": 75.0,
+    "bridge_from_midship": -60.0,
+    "conditions": {
+      "laden": { "d": 8.5, "GM": 1.2, "Cb": 0.60, "bowFreeboard": 5.5 },
+      "ballast": { "d": 5.0, "GM": 2.2, "Cb": 0.50, "bowFreeboard": 9.0 }
+    },
+    "notes": "Feeder class. Short roll period makes parametric resonance more likely in shorter seas."
+  },
+  "pcc": {
+    "name": "Pure Car Carrier (6,500 CEU)",
+    "type": "ro-ro",
+    "Lwl": 199, "B": 32.3, "d": 9.2, "GM": 2.0, "Cb": 0.58,
+    "rollDamping": 0.05,
+    "bowFreeboard": 7.5,
+    "fp_from_midship": 100.0,
+    "bridge_from_midship": -80.0,
+    "conditions": {
+      "laden": { "d": 9.2, "GM": 2.0, "Cb": 0.58, "bowFreeboard": 7.5 },
+      "ballast": { "d": 6.0, "GM": 3.8, "Cb": 0.48, "bowFreeboard": 10.7 }
+    },
+    "notes": "High windage area. Very vulnerable to parametric rolling — multiple incidents recorded."
+  },
+  "tanker": {
+    "name": "VLCC Tanker (laden, w/ bilge keels)",
+    "type": "tanker",
+    "Lwl": 320, "B": 58, "d": 20.5, "GM": 5.5, "Cb": 0.82,
+    "rollDamping": 0.10,
+    "bowFreeboard": 5.0,
+    "fp_from_midship": 160.0,
+    "bridge_from_midship": -128.0,
+    "conditions": {
+      "laden": { "d": 20.5, "GM": 5.5, "Cb": 0.82, "bowFreeboard": 5.0 },
+      "ballast": { "d": 10.0, "GM": 8.0, "Cb": 0.70, "bowFreeboard": 15.5 }
+    },
+    "notes": "High GM + bilge keels provide good roll damping. Slamming risk in ballast."
+  },
+  "bulk": {
+    "name": "Capesize Bulker (laden, w/ bilge keels)",
+    "type": "bulk",
+    "Lwl": 280, "B": 45, "d": 17.0, "GM": 3.2, "Cb": 0.85,
+    "rollDamping": 0.08,
+    "bowFreeboard": 4.5,
+    "fp_from_midship": 140.0,
+    "bridge_from_midship": -112.0,
+    "conditions": {
+      "laden": { "d": 17.0, "GM": 3.2, "Cb": 0.85, "bowFreeboard": 4.5 },
+      "ballast": { "d": 8.5, "GM": 6.0, "Cb": 0.72, "bowFreeboard": 13.0 }
+    },
+    "notes": "High block coefficient. Low freeboard in laden condition increases green water risk."
+  },
+  "roro": {
+    "name": "Ro-Ro Ferry",
+    "type": "ro-ro",
+    "Lwl": 186, "B": 28.6, "d": 6.8, "GM": 1.9, "Cb": 0.55,
+    "rollDamping": 0.07,
+    "bowFreeboard": 5.0,
+    "fp_from_midship": 93.0,
+    "bridge_from_midship": -74.0,
+    "conditions": {
+      "laden": { "d": 6.8, "GM": 1.9, "Cb": 0.55, "bowFreeboard": 5.0 },
+      "ballast": { "d": 5.0, "GM": 2.8, "Cb": 0.50, "bowFreeboard": 6.8 }
+    },
+    "notes": "Vehicle deck free surface can reduce effective GM. Monitor carefully."
+  },
+  "lng": {
+    "name": "LNG Carrier (174k m³)",
+    "type": "tanker",
+    "Lwl": 290, "B": 46, "d": 11.5, "GM": 4.0, "Cb": 0.76,
+    "rollDamping": 0.06,
+    "bowFreeboard": 9.0,
+    "fp_from_midship": 145.0,
+    "bridge_from_midship": -116.0,
+    "conditions": {
+      "laden": { "d": 11.5, "GM": 4.0, "Cb": 0.76, "bowFreeboard": 9.0 },
+      "ballast": { "d": 8.0, "GM": 5.5, "Cb": 0.68, "bowFreeboard": 12.5 }
+    },
+    "notes": "Membrane type. Sloshing in partial-fill tanks affects roll dynamics."
+  },
+  "custom": {
+    "name": "Custom Vessel",
+    "type": "custom",
+    "Lwl": 200, "B": 32, "d": 10, "GM": 1.5, "Cb": 0.65,
+    "rollDamping": 0.05,
+    "bowFreeboard": 6.0,
+    "fp_from_midship": 88.0,
+    "bridge_from_midship": -70.0,
+    "conditions": {},
+    "notes": "Enter your vessel's actual parameters for accurate assessment."
+  }
+}

@@ -77,7 +77,9 @@ export default function ParametricRollingCalculator() {
     heading_deg: heading, speed_kts: speed,
     Lwl: ship.Lwl, B: ship.B, GM: ship.GM, Tr,
     rollDamping: ship.rollDamping ?? 0.05,
-    bowFreeboard: 6.0, fp_from_midship: 88.0, bridge_from_midship: -70.0,
+    bowFreeboard: ship.bowFreeboard ?? 6.0,
+    fp_from_midship: ship.fp_from_midship ?? (ship.Lwl / 2),
+    bridge_from_midship: ship.bridge_from_midship ?? -(ship.Lwl * 0.4),
   }) : null;
   const windSpeed_kts = currentWind?.windSpeed ? currentWind.windSpeed / 1.852 : 0;
   const costFactor = motions ? getSafetyCostFactor(motions, waveHeight, windSpeed_kts) : 1.0;

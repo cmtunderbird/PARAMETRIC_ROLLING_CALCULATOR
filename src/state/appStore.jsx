@@ -6,17 +6,21 @@
 import { createContext, useContext, useReducer, useEffect, useCallback } from "react";
 import { decimalToNautical } from "../ui/components/NauticalCoord.jsx";
 
-// ─── Vessel Presets ──────────────────────────────────────────────────────────
-export const PRESETS = {
-  container_large: { name: "Large Container (14,000 TEU)", Lwl: 350, B: 48.2, d: 14.5, GM: 1.8, Cb: 0.65, rollDamping: 0.05 },
-  container_med:   { name: "Medium Container (4,000 TEU)", Lwl: 260, B: 32.2, d: 12.0, GM: 1.5, Cb: 0.62, rollDamping: 0.05 },
-  container_small: { name: "Small Container (1,000 TEU)",  Lwl: 150, B: 25.0, d: 8.5,  GM: 1.2, Cb: 0.60, rollDamping: 0.06 },
-  pcc:             { name: "Pure Car Carrier",              Lwl: 199, B: 32.3, d: 9.2,  GM: 2.0, Cb: 0.58, rollDamping: 0.05 },
-  tanker:          { name: "VLCC Tanker (laden, w/ BK)",    Lwl: 320, B: 58,   d: 20.5, GM: 5.5, Cb: 0.82, rollDamping: 0.10 },
-  bulk:            { name: "Capesize Bulker (w/ BK)",       Lwl: 280, B: 45,   d: 17.0, GM: 3.2, Cb: 0.85, rollDamping: 0.08 },
-  roro:            { name: "Ro-Ro Ferry",                   Lwl: 186, B: 28.6, d: 6.8,  GM: 1.9, Cb: 0.55, rollDamping: 0.07 },
-  custom:          { name: "Custom Vessel",                  Lwl: 200, B: 32,   d: 10,   GM: 1.5, Cb: 0.65, rollDamping: 0.05 },
-};
+// ─── Vessel Profiles (Phase 1, Item 9) ───────────────────────────────────────
+import vesselProfiles from "../core/vesselProfiles.json";
+
+// Build PRESETS from profiles (backward-compatible shape for UI consumers)
+export const PRESETS = Object.fromEntries(
+  Object.entries(vesselProfiles).map(([key, p]) => [key, {
+    name: p.name, Lwl: p.Lwl, B: p.B, d: p.d, GM: p.GM, Cb: p.Cb,
+    rollDamping: p.rollDamping,
+    bowFreeboard: p.bowFreeboard, fp_from_midship: p.fp_from_midship,
+    bridge_from_midship: p.bridge_from_midship,
+  }])
+);
+
+// Full profiles with conditions/notes for VesselConfig panel
+export { vesselProfiles };
 
 // ─── localStorage persistence keys ──────────────────────────────────────────
 const STORAGE_KEY = "prc_app_state";
