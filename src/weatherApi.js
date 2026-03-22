@@ -202,36 +202,6 @@ export async function fetchMarineUnified(points, forecastDays=7, bounds=null, gr
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
-export function closestHourIdx(times_unix, targetMs) {
-  if (!times_unix?.length) return 0;
-  return times_unix.reduce((best, t, k) =>
-    Math.abs(t*1000-targetMs) < Math.abs(times_unix[best]*1000-targetMs) ? k : best, 0);
-}
-
-// snapshotAt — internal helper, not exported (unused outside weatherApi.js)
-function snapshotAt(pt, hourIdx) {
-  if (!pt || pt.error) return null;
-  const g = (arr) => arr?.[hourIdx] ?? null;
-  return {
-    lat: pt.lat, lon: pt.lon, source: pt.source,
-    waveHeight:  g(pt.waveHeight),  waveDir:     g(pt.waveDir),    wavePeriod:  g(pt.wavePeriod),
-    windWaveH:   g(pt.windWaveH),   windWaveT:   g(pt.windWaveT),  windWaveDir: g(pt.windWaveDir),
-    swellHeight: g(pt.swellHeight), swellPeriod: g(pt.swellPeriod),swellDir:    g(pt.swellDir),
-    currentSpeed:g(pt.currentSpeed),currentDir:  g(pt.currentDir),
-    currentU:    g(pt.currentU),    currentV:    g(pt.currentV),   sst: g(pt.sst),
-    windKts:     g(pt.windKts),     windDir:     g(pt.windDir),    mslp: g(pt.mslp),
-  };
-}
-
-export function calcVoyageETAs(waypoints, bospTimeMs, speedKts) {
-  if (!waypoints?.length || speedKts <= 0) return [];
-  let cumNM = 0;
-  return waypoints.map((wp, i) => {
-    if (i === 0) return { ...wp, cumNM: 0, etaMs: bospTimeMs };
-    const prev = waypoints[i-1];
-    const dLat = (wp.lat-prev.lat)*Math.PI/180, dLon = (wp.lon-prev.lon)*Math.PI/180;
-    const a = Math.sin(dLat/2)**2 + Math.cos(prev.lat*Math.PI/180)*Math.cos(wp.lat*Math.PI/180)*Math.sin(dLon/2)**2;
-    cumNM += 3440.065 * 2 * Math.asin(Math.sqrt(a));
-    return { ...wp, cumNM, etaMs: bospTimeMs+(cumNM/speedKts)*3600000, legNM: cumNM };
-  });
-}
+// ── Re-exports from voyageEngine (Phase 1, Item 5 extraction) ─────────────────
+// Kept here for backward compatibility — consumers should import from core/voyageEngine.js
+export { closestHourIdx, calcVoyageETAs } from "./core/voyageEngine.js";

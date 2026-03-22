@@ -11,6 +11,7 @@ import MeteoCanvasOverlay from "./MeteoOverlay.jsx";
 import { buildGridPoints, fetchAtmosphericGrid,
          fetchMarineUnified, fetchCmemsPhysicsGrid,
          closestHourIdx, calcVoyageETAs } from "./weatherApi.js";
+import { cumulativeDistances } from "./core/voyageEngine.js";
 import { cacheStatus, cacheInvalidate } from "./weatherCache.js";
 import { loadCmemsCredentials } from "./cmemsProvider.js";
 import { calcMotions, getMotionStatus } from "./physics.js";
@@ -241,13 +242,7 @@ export default function RouteChart({ shipParams }) {
       const totalNM = voyageWPs[voyageWPs.length-1].cumNM||1;
       const bospMs = new Date(bospDT).getTime();
       const eospMs = bospMs + (totalNM/voyageSpeed)*3600000;
-      let cumDists = [0];
-      for (let i=1;i<pts.length;i++){
-        const pr=pts[i-1],cu=pts[i];
-        const dLat=(cu.lat-pr.lat)*Math.PI/180, dLon=(cu.lon-pr.lon)*Math.PI/180;
-        const a=Math.sin(dLat/2)**2+Math.cos(pr.lat*Math.PI/180)*Math.cos(cu.lat*Math.PI/180)*Math.sin(dLon/2)**2;
-        cumDists.push(cumDists[i-1]+3440.065*2*Math.asin(Math.sqrt(a)));
-      }
+      const cumDists = cumulativeDistances(pts);
       const totalPtNM = cumDists[cumDists.length-1]||1;
       const ptsWithETA = pts.map((p,i)=>({ ...p, etaMs: bospMs+(cumDists[i]/totalPtNM)*(eospMs-bospMs) }));
       const uniq=[], seen=new Set();
