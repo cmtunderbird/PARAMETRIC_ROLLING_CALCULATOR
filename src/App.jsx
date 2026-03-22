@@ -23,54 +23,12 @@ import {
   nauticalToDecimal, formatNauticalLat, formatNauticalLon,
 } from "./ui/components/index.js";
 
-// ─── Weather API Functions (will move to weather/providers in Item 4) ──
-const WEATHER_SOURCES = {
-  "open-meteo-marine": {
-    name: "Open-Meteo Marine",
-    desc: "DWD ICON + ECMWF WAM wave models",
-    free: true,
-    buildUrl: (lat, lon) =>
-      `https://marine-api.open-meteo.com/v1/marine?latitude=${lat}&longitude=${lon}&hourly=wave_height,wave_direction,wave_period,swell_wave_height,swell_wave_period,swell_wave_direction,wind_wave_height,wind_wave_period,wind_wave_direction&forecast_days=7&timeformat=unixtime`,
-    parse: (data) => {
-      const h = data.hourly;
-      return h.time.map((t, i) => ({
-        time: t * 1000,
-        waveHeight: h.wave_height?.[i] ?? null, waveDir: h.wave_direction?.[i] ?? null,
-        wavePeriod: h.wave_period?.[i] ?? null, swellHeight: h.swell_wave_height?.[i] ?? null,
-        swellPeriod: h.swell_wave_period?.[i] ?? null, swellDir: h.swell_wave_direction?.[i] ?? null,
-        windWaveHeight: h.wind_wave_height?.[i] ?? null, windWavePeriod: h.wind_wave_period?.[i] ?? null,
-        windWaveDir: h.wind_wave_direction?.[i] ?? null,
-      }));
-    },
-  },
-  "open-meteo-weather": {
-    name: "Open-Meteo Weather",
-    desc: "Wind speed & direction (atmospheric)",
-    free: true,
-    buildUrl: (lat, lon) =>
-      `https://api.open-meteo.com/v1/forecast?latitude=${lat}&longitude=${lon}&hourly=wind_speed_10m,wind_direction_10m,wind_gusts_10m&forecast_days=7&timeformat=unixtime`,
-    parse: (data) => {
-      const h = data.hourly;
-      return h.time.map((t, i) => ({
-        time: t * 1000, windSpeed: h.wind_speed_10m?.[i] ?? null,
-        windDir: h.wind_direction_10m?.[i] ?? null, windGusts: h.wind_gusts_10m?.[i] ?? null,
-      }));
-    },
-  },
-};
-
+// ── Weather providers (Phase 1, Item 4) ──
+import { OPEN_METEO_SOURCES, fetchOpenMeteo } from "./weather/providers/index.js";
+// Alias for backward compat with Weather Sources tab
+const WEATHER_SOURCES = OPEN_METEO_SOURCES;
 async function fetchWeatherData(sourceKey, lat, lon) {
-  const src = WEATHER_SOURCES[sourceKey];
-  const url = src.buildUrl(lat, lon);
-  for (let attempt = 0; attempt < 4; attempt++) {
-    const resp = await fetch(url);
-    if (resp.status === 429) { await new Promise(r => setTimeout(r, Math.min(2000 * Math.pow(2, attempt), 20000))); continue; }
-    if (!resp.ok) throw new Error(`${src.name}: HTTP ${resp.status}`);
-    const data = await resp.json();
-    if (data.error) throw new Error(`${src.name}: ${data.reason}`);
-    return src.parse(data);
-  }
-  throw new Error(`${src.name}: rate limited after retries`);
+  return fetchOpenMeteo(sourceKey, lat, lon, 7);
 }
 
 // ─── Main App — reads from centralised store ────────────────────────────────
