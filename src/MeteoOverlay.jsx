@@ -196,34 +196,52 @@ function renderSynopticImage(marineGrid, mode, shipParams, hourIdx) {
 }
 
 // ── Layer 3: Isobars + Wind Barbs ─────────────────────────────────────────────
+// Renders onto the marine canvas using direct lat/lon → pixel mapping
+// (independent of marine grid resolution)
 function renderAtmoLayer(canvas, cols, rows, cw, ch, atmoResults, bounds, gridRes, hourIdx) {
   if (!atmoResults?.length) return;
-  const { south, north, west, east } = bounds;
   const ctx = canvas.getContext("2d");
 
-  // Build grids
-  const pGrid = Array.from({length:rows},()=>Array(cols).fill(null));
-  const wSpd  = Array.from({length:rows},()=>Array(cols).fill(null));
-  const wDir  = Array.from({length:rows},()=>Array(cols).fill(null));
+  // Compute actual extent from the data + the canvas bounds
+  const { south, north, west, east } = bounds;
+  const latSpan = north - south || 1;
+  const lonSpan = east - west || 1;
+
+  // Direct lat/lon → pixel mapping (works regardless of grid resolution mismatch)
+  const toX = (lon) => ((lon - west) / lonSpan) * cw;
+  const toY = (lat) => ((north - lat) / latSpan) * ch;
+
+  // Build sparse pressure grid for isobars (resample to marine grid)
+  const mCols = Math.round(lonSpan / (gridRes || 0.25)) + 1;
+  const mRows = Math.round(latSpan / (gridRes || 0.25)) + 1;
+  const pGrid = Array.from({length:mRows},()=>Array(mCols).fill(null));
+
+  // Also collect point data for wind barbs
+  const windPts = [];
 
   for (const pt of atmoResults) {
     if (!pt.times) continue;
-    const idx = Math.min(hourIdx, pt.times.length-1);
-    const c = Math.round((pt.lon-west)/gridRes);
-    const r = Math.round((north-pt.lat)/gridRes);
-    if (r<0||r>=rows||c<0||c>=cols) continue;
-    pGrid[r][c] = pt.mslp?.[idx]  ?? null;
-    wSpd[r][c]  = pt.windKts?.[idx] ?? null;
-    wDir[r][c]  = pt.windDir?.[idx] ?? null;
+    const idx = Math.min(hourIdx, pt.times.length - 1);
+    const c = Math.round((pt.lon - west) / (gridRes || 0.25));
+    const r = Math.round((north - pt.lat) / (gridRes || 0.25));
+    if (r >= 0 && r < mRows && c >= 0 && c < mCols) {
+      pGrid[r][c] = pt.mslp?.[idx] ?? null;
+    }
+    // Collect wind data for barbs
+    const ws = pt.windKts?.[idx];
+    const wd = pt.windDir?.[idx];
+    if (ws != null && wd != null && ws > 0) {
+      windPts.push({ px: toX(pt.lon), py: toY(pt.lat), ws, wd });
+    }
   }
-  fillNulls(pGrid,rows,cols);
+  fillNulls(pGrid, mRows, mCols);
 
   // Isobars every 4 hPa (960–1044)
   const pLevels = [];
   for (let p=960;p<=1044;p+=4) pLevels.push(p);
   ctx.lineWidth=1.2;
   for (const lvl of pLevels) {
-    const segs=isolines(pGrid,rows,cols,lvl);
+    const segs=isolines(pGrid,mRows,mCols,lvl);
     if (!segs.length) continue;
     const isRound50=lvl%20===0;
     ctx.strokeStyle=isRound50?"rgba(255,220,50,0.75)":"rgba(255,255,255,0.35)";
@@ -231,76 +249,71 @@ function renderAtmoLayer(canvas, cols, rows, cw, ch, atmoResults, bounds, gridRe
     ctx.setLineDash(isRound50?[]:[4,3]);
     ctx.beginPath();
     for (const [p0,p1] of segs){
-      ctx.moveTo(p0.x/(cols-1)*cw, p0.y/(rows-1)*ch);
-      ctx.lineTo(p1.x/(cols-1)*cw, p1.y/(rows-1)*ch);
+      ctx.moveTo(p0.x/(mCols-1)*cw, p0.y/(mRows-1)*ch);
+      ctx.lineTo(p1.x/(mCols-1)*cw, p1.y/(mRows-1)*ch);
     }
     ctx.stroke();
-    // Label 1020 and every 20 hPa
     if (isRound50 && segs.length>0) {
       ctx.setLineDash([]);
       ctx.font="bold 10px sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
       const [p0,p1]=segs[Math.floor(segs.length/2)];
-      const lx=((p0.x+p1.x)/2/(cols-1))*cw, ly=((p0.y+p1.y)/2/(rows-1))*ch;
+      const lx=((p0.x+p1.x)/2/(mCols-1))*cw, ly=((p0.y+p1.y)/2/(mRows-1))*ch;
       ctx.fillStyle="rgba(0,0,0,0.6)"; ctx.fillRect(lx-13,ly-6,26,12);
       ctx.fillStyle="rgba(255,220,50,0.95)"; ctx.fillText(`${lvl}`,lx,ly);
     }
   }
   ctx.setLineDash([]);
 
-  // WMO wind barbs — every other grid point to avoid clutter
-  const step = cols > 12 ? 2 : 1;
-  for (let r=0;r<rows;r+=step) {
-    for (let c=0;c<cols;c+=step) {
-      const spd = wSpd[r][c], dir = wDir[r][c];
-      if (spd==null||dir==null) continue;
-      const px = (c/(cols-1))*cw;
-      const py = (r/(rows-1))*ch;
-      const sc = Math.max(0.7, Math.min(1.2, cw/(cols*40)));
-      drawBarb(ctx, px, py, spd, dir, sc);
-    }
+  // WMO wind barbs — thin out if too dense
+  const minSpacing = 35; // minimum pixel spacing between barbs
+  const drawn = [];
+  const sc = Math.max(0.7, Math.min(1.2, cw / 800));
+  for (const wp of windPts) {
+    // Skip if too close to an already-drawn barb
+    if (drawn.some(d => Math.hypot(d.px - wp.px, d.py - wp.py) < minSpacing)) continue;
+    drawBarb(ctx, wp.px, wp.py, wp.ws, wp.wd, sc);
+    drawn.push(wp);
   }
 }
 
-// ── Layer 4: Ocean current arrows (CMEMS uo/vo or Open-Meteo proxy) ────────────
+// ── Layer 4: Ocean current arrows ──────────────────────────────────────────────
+// Direct lat/lon → pixel mapping (independent of grid resolution)
 function renderCurrentsLayer(canvas, cols, rows, cw, ch, physResults, bounds, gridRes, hourIdx) {
   if (!physResults?.length) return;
   const { south, north, west, east } = bounds;
   const ctx = canvas.getContext("2d");
-  const cGrid = Array.from({length:rows},()=>Array(cols).fill(null));
-  const dGrid = Array.from({length:rows},()=>Array(cols).fill(null));
-  for (const pt of physResults) {
-    if (!pt.times) continue;
-    const idx = Math.min(hourIdx, pt.times.length-1);
-    const c = Math.round((pt.lon-west)/gridRes);
-    const r = Math.round((north-pt.lat)/gridRes);
-    if (r<0||r>=rows||c<0||c>=cols) continue;
-    cGrid[r][c] = pt.currentSpeed?.[idx] ?? null;
-    dGrid[r][c] = pt.currentDir?.[idx]   ?? null;
-  }
-  // Draw current arrows — every other grid point, scale length by speed
-  const step = cols > 10 ? 2 : 1;
+  const latSpan = north - south || 1;
+  const lonSpan = east - west || 1;
+  const toX = (lon) => ((lon - west) / lonSpan) * cw;
+  const toY = (lat) => ((north - lat) / latSpan) * ch;
+
+  const minSpacing = 30;
+  const drawn = [];
   ctx.strokeStyle = "rgba(34,211,238,0.70)";
   ctx.fillStyle   = "rgba(34,211,238,0.70)";
   ctx.lineWidth   = 1.5;
-  for (let r=0;r<rows;r+=step) {
-    for (let c=0;c<cols;c+=step) {
-      const spd = cGrid[r][c], dir = dGrid[r][c];
-      if (spd==null||dir==null||spd<0.05) continue;
-      const px = (c/(Math.max(cols-1,1)))*cw;
-      const py = (r/(Math.max(rows-1,1)))*ch;
-      const len = Math.min(spd*60, 28); // scale: 1 m/s ≈ 60px, cap 28
-      const ang = (dir-90)*Math.PI/180; // meteorological to math convention
-      const ex = px+len*Math.cos(ang), ey = py+len*Math.sin(ang);
-      // Arrow shaft
-      ctx.beginPath(); ctx.moveTo(px,py); ctx.lineTo(ex,ey); ctx.stroke();
-      // Arrowhead
-      const ha=0.45, hl=7;
-      ctx.beginPath();
-      ctx.moveTo(ex,ey);
-      ctx.lineTo(ex-hl*Math.cos(ang-ha), ey-hl*Math.sin(ang-ha));
-      ctx.lineTo(ex-hl*Math.cos(ang+ha), ey-hl*Math.sin(ang+ha));
-      ctx.closePath(); ctx.fill();
-    }
+
+  for (const pt of physResults) {
+    if (!pt.times) continue;
+    const idx = Math.min(hourIdx, pt.times.length - 1);
+    const spd = pt.currentSpeed?.[idx];
+    const dir = pt.currentDir?.[idx];
+    if (spd == null || dir == null || spd < 0.05) continue;
+    const px = toX(pt.lon);
+    const py = toY(pt.lat);
+    if (px < 0 || px > cw || py < 0 || py > ch) continue;
+    if (drawn.some(d => Math.hypot(d.px - px, d.py - py) < minSpacing)) continue;
+    const len = Math.min(spd * 60, 28);
+    const ang = (dir - 90) * Math.PI / 180;
+    const ex = px + len * Math.cos(ang), ey = py + len * Math.sin(ang);
+    ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(ex, ey); ctx.stroke();
+    const ha = 0.45, hl = 7;
+    ctx.beginPath();
+    ctx.moveTo(ex, ey);
+    ctx.lineTo(ex - hl * Math.cos(ang - ha), ey - hl * Math.sin(ang - ha));
+    ctx.lineTo(ex - hl * Math.cos(ang + ha), ey - hl * Math.sin(ang + ha));
+    ctx.closePath(); ctx.fill();
+    drawn.push({ px, py });
   }
 }
 export default function MeteoCanvasOverlay({ marineGrid, atmoGrid, physicsGrid, mode, shipParams, hourIdx=0 }) {
@@ -311,10 +324,16 @@ export default function MeteoCanvasOverlay({ marineGrid, atmoGrid, physicsGrid, 
     if (!map || !marineGrid?.results?.length) return;
     const { south, north, west, east } = marineGrid.bounds;
     const { canvas, cols, rows, cw, ch } = renderSynopticImage(marineGrid, mode, shipParams, hourIdx);
-    if (atmoGrid?.results?.length)
-      renderAtmoLayer(canvas, cols, rows, cw, ch, atmoGrid.results, marineGrid.bounds, marineGrid.gridRes, hourIdx);
-    if (physicsGrid?.results?.length)
-      renderCurrentsLayer(canvas, cols, rows, cw, ch, physicsGrid.results, marineGrid.bounds, marineGrid.gridRes, hourIdx);
+    // All layers map onto the MARINE canvas — use marineGrid.bounds for pixel coords
+    const canvasBounds = marineGrid.bounds;
+    if (atmoGrid?.results?.length) {
+      const aRes = atmoGrid.gridRes || marineGrid.gridRes;
+      renderAtmoLayer(canvas, 0, 0, cw, ch, atmoGrid.results, canvasBounds, aRes, hourIdx);
+    }
+    if (physicsGrid?.results?.length) {
+      const pRes = physicsGrid.gridRes || marineGrid.gridRes;
+      renderCurrentsLayer(canvas, 0, 0, cw, ch, physicsGrid.results, canvasBounds, pRes, hourIdx);
+    }
 
     const bounds = L.latLngBounds([[south,west],[north,east]]);
     if (overlayRef.current) { map.removeLayer(overlayRef.current); overlayRef.current=null; }
