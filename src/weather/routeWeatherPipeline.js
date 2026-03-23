@@ -212,18 +212,24 @@ export async function fetchRouteWeather({
       }
 
       // Use the SAME marine/atmo data already fetched for coherence
+      // Nearest-neighbour lookup (NOAA grid is 0.25-0.5°, route points are arbitrary)
       const mResults = marineGrid?.results ?? [];
       const aResults = atmoGrid?.results ?? [];
-      const marineMap = new Map(mResults.map(r =>
-        [`${r.lat.toFixed(1)},${r.lon.toFixed(1)}`, r]));
-      const atmoMap = new Map(aResults.map(r =>
-        [`${r.lat.toFixed(1)},${r.lon.toFixed(1)}`, r]));
+
+      function findNearest(results, lat, lon) {
+        if (!results.length) return null;
+        let best = null, bestDist = Infinity;
+        for (const r of results) {
+          const d = (r.lat - lat) ** 2 + (r.lon - lon) ** 2;
+          if (d < bestDist) { bestDist = d; best = r; }
+        }
+        return best;
+      }
 
       onProgress("Computing seakeeping motions...", 80, "");
       voyageWeather = ptsWithETA.map(p => {
-        const key = `${p.lat.toFixed(1)},${p.lon.toFixed(1)}`;
-        const mr = marineMap.get(key);
-        const ar = atmoMap.get(key);
+        const mr = findNearest(mResults, p.lat, p.lon);
+        const ar = findNearest(aResults, p.lat, p.lon);
         const mIdx = mr ? closestHourIdx(mr.times, p.etaMs) : 0;
         const aIdx = ar ? closestHourIdx(ar.times, p.etaMs) : 0;
         const weather = mr ? {
