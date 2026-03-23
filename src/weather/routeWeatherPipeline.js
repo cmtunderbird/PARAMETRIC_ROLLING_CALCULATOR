@@ -110,21 +110,48 @@ export async function fetchRouteWeather({
   }
 
   // ═══ STAGE 3: Fetch marine grid (synoptic overlay) ═══
+  // Source-aware: use NOAA WW3 when bridge is up, else fall back to old path
   let marineGrid = null;
   if (gridPts && gridBounds) {
     onProgress("Fetching marine data...", 20, `${family.label} — ${gridPts.length} grid points`);
     try {
-      const creds = cmemsCredentials?.user ? cmemsCredentials : null;
-      const mResult = await fetchMarineUnified(gridPts, 7, gridBounds, effectiveGridRes,
-        cmemsProvider, creds);
-      marineGrid = { results: mResult.results, gridRes: effectiveGridRes,
-        bounds: gridBounds, provider: mResult.provider, fromCache: mResult.fromCache,
-        fetchedAt: mResult.fetchedAt };
+      if (family.marine === "noaa_wwiii" && family.bridgeUp) {
+        // ── NOAA WaveWatch III via OPeNDAP (single bbox request) ──
+        // WW3 native grid is 0.5° — set gridRes to match for correct overlay rendering
+        const wwResult = await fetchNoaaWaveWatch(gridBounds, 120);
+        const nativeRes = 0.5; // WW3 native resolution
+        marineGrid = { results: wwResult.results, gridRes: nativeRes,
+          bounds: gridBounds, provider: "noaa_wwiii", fromCache: false,
+          fetchedAt: Date.now(), run: wwResult.run };
+      } else {
+        // ── Fallback: CMEMS → Open-Meteo via old unified path ──
+        const creds = cmemsCredentials?.user ? cmemsCredentials : null;
+        const mResult = await fetchMarineUnified(gridPts, 7, gridBounds, effectiveGridRes,
+          cmemsProvider, creds);
+        marineGrid = { results: mResult.results, gridRes: effectiveGridRes,
+          bounds: gridBounds, provider: mResult.provider || "openmeteo",
+          fromCache: mResult.fromCache, fetchedAt: mResult.fetchedAt };
+      }
     } catch (e) {
       log.push({ stage: "marine_grid", error: e.message });
+      // If NOAA failed, try Open-Meteo as fallback
+      if (family.marine === "noaa_wwiii") {
+        try {
+          log.push({ stage: "marine_grid_fallback", detail: "NOAA failed, trying Open-Meteo" });
+          const mResult = await fetchMarineUnified(gridPts, 7, gridBounds, effectiveGridRes,
+            "openmeteo", null);
+          marineGrid = { results: mResult.results, gridRes: effectiveGridRes,
+            bounds: gridBounds, provider: mResult.provider || "openmeteo",
+            fromCache: mResult.fromCache, fetchedAt: mResult.fetchedAt };
+        } catch (e2) {
+          log.push({ stage: "marine_grid_fallback", error: e2.message });
+        }
+      }
     }
   }
-  progress("marine_grid", marineGrid ? `${marineGrid.results?.length} pts` : "skipped");
+  progress("marine_grid", marineGrid
+    ? `${marineGrid.results?.length} pts (${marineGrid.provider}${marineGrid.run ? " " + marineGrid.run : ""})`
+    : "skipped");
 
   // ═══ STAGE 4: Fetch wind grid (SAME model family as marine) ═══
   let atmoGrid = null;
@@ -136,8 +163,8 @@ export async function fetchRouteWeather({
     try {
       if (windSource === "noaa_gfs" && family.bridgeUp) {
         const gfsResult = await fetchNoaaGfs(gridBounds, 120);
-        atmoGrid = { results: gfsResult.results, gridRes: effectiveGridRes,
-          bounds: gridBounds, provider: "noaa_gfs" };
+        atmoGrid = { results: gfsResult.results, gridRes: 0.25, // GFS native resolution
+          bounds: gridBounds, provider: "noaa_gfs", run: gfsResult.run };
       } else {
         const aResult = await fetchAtmosphericGrid(gridPts, 7, gridBounds, effectiveGridRes);
         atmoGrid = { results: aResult.results, gridRes: effectiveGridRes,

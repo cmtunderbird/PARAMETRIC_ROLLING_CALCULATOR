@@ -282,85 +282,11 @@ export default function RouteChart({ shipParams }) {
     setVoyageWeather(null);
   };
 
-  // ── Fetch voyage weather ──
-  const fetchVoyageWeather = async () => {
-    if (!voyageWPs?.length) return;
-    setVwLoading(true); setVwError(null);
-    try {
-      const pts = generateWeatherSamplePoints(route.waypoints, 150);
-      const totalNM = voyageWPs[voyageWPs.length-1].cumNM||1;
-      const bospMs = new Date(bospDT).getTime();
-      const eospMs = bospMs + (totalNM/voyageSpeed)*3600000;
-      const cumDists = cumulativeDistances(pts);
-      const totalPtNM = cumDists[cumDists.length-1]||1;
-      const ptsWithETA = pts.map((p,i)=>({ ...p, etaMs: bospMs+(cumDists[i]/totalPtNM)*(eospMs-bospMs) }));
-      const uniq=[], seen=new Set();
-      for (const p of ptsWithETA){ const k=`${p.lat.toFixed(1)},${p.lon.toFixed(1)}`; if(!seen.has(k)){seen.add(k);uniq.push(p);} }
-      const vBounds = { south:Math.floor(Math.min(...uniq.map(p=>p.lat))-1), north:Math.ceil(Math.max(...uniq.map(p=>p.lat))+1),
-        west:Math.floor(Math.min(...uniq.map(p=>p.lon))-1), east:Math.ceil(Math.max(...uniq.map(p=>p.lon))+1) };
-      const marineRaw = await fetchMarineUnified(uniq, 7, vBounds, 2.0, cmemsProvider, cmemsCredentials);
-      const atmoRaw = await fetchAtmosphericGrid(uniq, 7, vBounds, 2.0);
-      const mResults = Array.isArray(marineRaw) ? marineRaw : (marineRaw?.results ?? []);
-      const aResults = Array.isArray(atmoRaw) ? atmoRaw : (atmoRaw?.results ?? []);
-      const marineMap = new Map(mResults.map(r=>[`${r.lat.toFixed(1)},${r.lon.toFixed(1)}`,r]));
-      const atmoMap = new Map(aResults.map(r=>[`${r.lat.toFixed(1)},${r.lon.toFixed(1)}`,r]));
-      const results = ptsWithETA.map(p=>{
-        const key=`${p.lat.toFixed(1)},${p.lon.toFixed(1)}`;
-        const mr=marineMap.get(key); const ar=atmoMap.get(key);
-        const mIdx = mr ? closestHourIdx(mr.times, p.etaMs) : 0;
-        const aIdx = ar ? closestHourIdx(ar.times, p.etaMs) : 0;
-        const weather = mr ? { waveHeight:mr.waveHeight?.[mIdx], waveDir:mr.waveDir?.[mIdx], wavePeriod:mr.wavePeriod?.[mIdx],
-          swellHeight:mr.swellHeight?.[mIdx], swellPeriod:mr.swellPeriod?.[mIdx], swellDir:mr.swellDir?.[mIdx],
-          windKts:ar?.windKts?.[aIdx], windDir:ar?.windDir?.[aIdx], mslp:ar?.mslp?.[aIdx] } : null;
-        const safeWeather = weather ? sanitizeWxSnapshot(weather) : null;
-        const motions = safeWeather ? calcMotions({ waveHeight_m:safeWeather.waveHeight||0, wavePeriod_s:safeWeather.wavePeriod||8,
-          waveDir_deg:safeWeather.waveDir||p.heading||0, swellHeight_m:safeWeather.swellHeight||0, swellPeriod_s:safeWeather.swellPeriod||10,
-          swellDir_deg:safeWeather.swellDir||0, heading_deg:p.heading||0, speed_kts:voyageSpeed,
-          Lwl:shipParams?.Lwl||200, B:shipParams?.B||32, GM:shipParams?.GM||2.5, Tr:shipParams?.Tr||14,
-          rollDamping:shipParams?.rollDamping??0.05 }) : null;
-        const motionStatus = motions ? getMotionStatus(motions,weather?.waveHeight||0,weather?.windKts||0) : null;
-        return { ...p, weather, motions, motionStatus, riskSeverity: motionStatus?.severity ?? 0 };
-      });
-      setVoyageWeather(results);
-    } catch(e){ setVwError(e.message); }
-    setVwLoading(false);
-  };
+  // ── Fetch voyage weather (legacy — delegates to unified pipeline) ──
+  const fetchVoyageWeather = () => fetchAllRouteWeather(false);
 
-  // ── Fetch synoptic overlay ──
-  const fetchSeaOverlay = async (forceRefresh = false) => {
-    const map = mapRef.current; if (!map) return;
-    setGridLoading(true); setGridError(null); setGridProgress(null);
-    try {
-      const b = map.getBounds();
-      const bounds = { south:b.getSouth(), north:b.getNorth(), west:b.getWest(), east:b.getEast() };
-      let effectiveGridRes = gridRes;
-      let { points, bounds: gb } = buildGridPoints(bounds, effectiveGridRes);
-      while (points.length > 600 && effectiveGridRes < 8.0) {
-        effectiveGridRes = parseFloat((effectiveGridRes + 0.25).toFixed(2));
-        ({ points, bounds: gb } = buildGridPoints(bounds, effectiveGridRes));
-      }
-      if (points.length > 2000) throw new Error(`Grid too large (${points.length} pts). Zoom in or increase resolution.`);
-      if (forceRefresh) { cacheInvalidate("marine",gb,effectiveGridRes); cacheInvalidate("atmo",gb,effectiveGridRes);
-        cacheInvalidate("marine_cmems",gb,0.083); cacheInvalidate("physics_cmems",gb,0.083); }
-      setGridProgress({step:`Marine waves (${effectiveGridRes}° grid, ${points.length} pts)`,done:0,total:Math.ceil(points.length/10)});
-      const mResult = await fetchMarineUnified(points,7,gb,effectiveGridRes,cmemsProvider,cmemsCredentials,
-        (done,total)=>setGridProgress({step:`Marine waves (${effectiveGridRes}° grid)`,done,total}));
-      setMarineGrid({results:mResult.results,gridRes:effectiveGridRes,bounds:gb});
-      setLastFetchSrc(mResult.fromCache?"cache":"network"); setGridFetchedAt(mResult.fetchedAt);
-      if (showAtmo) {
-        setGridProgress({step:"GFS wind + MSLP",done:0,total:Math.ceil(points.length/10)});
-        const aResult = await fetchAtmosphericGrid(points,7,gb,effectiveGridRes,(done,total)=>setGridProgress({step:"GFS wind + MSLP",done,total}));
-        setAtmoGrid({results:aResult.results,gridRes:effectiveGridRes,bounds:gb});
-      } else { setAtmoGrid(null); }
-      if (cmemsCredentials && showCurrents) {
-        setGridProgress({step:"CMEMS currents",done:0,total:1});
-        try { const phyResult = await fetchCmemsPhysicsGrid(cmemsCredentials.user,cmemsCredentials.pass,points,gb,0.083);
-          setPhysicsGrid({results:phyResult.results,gridRes:0.083,bounds:gb}); } catch(e) { console.warn("CMEMS physics failed:",e.message); }
-      }
-      setChartHourIdx(0); setPlaying(false); setCacheInfo(cacheStatus());
-    } catch(e){ setGridError(e.message); }
-    setGridLoading(false); setGridProgress(null);
-  };
+  // ── Fetch synoptic overlay (legacy — delegates to unified pipeline) ──
+  const fetchSeaOverlay = (forceRefresh = false) => fetchAllRouteWeather(forceRefresh);
 
   // ── Computed ──
   const eosp = voyageWPs?.[voyageWPs.length-1];
