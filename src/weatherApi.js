@@ -143,7 +143,7 @@ export async function fetchMarineGrid(points, forecastDays=7, bounds=null, gridR
     }
   }
   const results = await _fetchMarineRaw(points, forecastDays, onProgress);
-  if (bounds) cacheSet("marine", bounds, gridRes, results);
+  if (bounds) cacheSet("marine", bounds, gridRes, results, "openmeteo");
   return { results, fromCache:false, fetchedAt:Date.now(), cacheAgeMin:0, provider:"openmeteo" };
 }
 
@@ -156,8 +156,8 @@ export async function fetchAtmosphericGrid(points, forecastDays=7, bounds=null, 
     }
   }
   const results = await _fetchAtmoRaw(points, forecastDays, onProgress);
-  if (bounds) cacheSet("atmo", bounds, gridRes, results);
-  return { results, fromCache:false, fetchedAt:Date.now(), cacheAgeMin:0, provider:"gfs" };
+  if (bounds) cacheSet("atmo", bounds, gridRes, results, "openmeteo_gfs");
+  return { results, fromCache:false, fetchedAt:Date.now(), cacheAgeMin:0, provider:"openmeteo_gfs" };
 }
 
 export async function fetchCmemsMarineGrid(user, pass, points, forecastDays=7, bounds=null, gridRes=0.083) {
@@ -169,7 +169,7 @@ export async function fetchCmemsMarineGrid(user, pass, points, forecastDays=7, b
     }
   }
   const results = await cmemsWaveGrid(user, pass, bounds||{south:-80,north:90,west:-180,east:180}, forecastDays);
-  if (bounds) cacheSet("marine_cmems", bounds, gridRes, results);
+  if (bounds) cacheSet("marine_cmems", bounds, gridRes, results, "cmems");
   return { results, fromCache:false, fetchedAt:Date.now(), cacheAgeMin:0, provider:"cmems" };
 }
 
@@ -182,7 +182,7 @@ export async function fetchCmemsPhysicsGrid(user, pass, points, bounds=null, gri
     }
   }
   const results = await cmemsPhysicsGrid(user, pass, bounds||{south:-80,north:90,west:-180,east:180}, 2);
-  if (bounds) cacheSet("physics_cmems", bounds, gridRes, results);
+  if (bounds) cacheSet("physics_cmems", bounds, gridRes, results, "cmems_phy");
   return { results, fromCache:false, fetchedAt:Date.now(), cacheAgeMin:0, provider:"cmems_phy" };
 }
 

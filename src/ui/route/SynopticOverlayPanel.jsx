@@ -53,12 +53,20 @@ export default function SynopticOverlayPanel({
             <button onClick={()=>{cacheClearAll();setCacheInfo([]);}}
               style={{...btnSt,padding:"2px 6px",fontSize:8,background:"#7F1D1D30",color:"#EF4444",border:"1px solid #EF444430"}}>CLEAR ALL</button>
           </div>
-          {cacheInfo.map((e,i)=>(
+          {cacheInfo.map((e,i)=>{
+            const provColor = e.provider==="noaa_wwiii"||e.provider==="noaa_gfs"?"#22C55E"
+              :e.provider==="cmems"||e.provider==="cmems_phy"?"#A855F7"
+              :e.provider==="openmeteo"||e.provider==="openmeteo_gfs"?"#3B82F6":"#64748B";
+            const provLabel = e.provider==="noaa_wwiii"?"WW3":e.provider==="noaa_gfs"?"GFS"
+              :e.provider==="cmems"?"CM":e.provider==="cmems_phy"?"CM-PHY"
+              :e.provider==="openmeteo"?"OM":e.provider==="openmeteo_gfs"?"OM-GFS":"?";
+            return (
             <div key={i} style={{fontSize:8,color:"#475569",fontFamily:"'JetBrains Mono',monospace",lineHeight:1.6}}>
               <span style={{color:e.staleInMin>60?"#16A34A":"#D97706"}}>{e.type}</span>
-              &nbsp;{"\u00b7"} {e.pts} pts {"\u00b7"} age {e.ageMin}m {"\u00b7"} fresh for {e.staleInMin}m
-            </div>
-          ))}
+              &nbsp;{"\u00b7"} <span style={{color:provColor,fontWeight:700}}>{provLabel}</span>
+              &nbsp;{"\u00b7"} {e.pts} pts {e.gridRes?`@ ${e.gridRes}\u00b0`:""} {"\u00b7"} age {e.ageMin}m {"\u00b7"} fresh for {e.staleInMin}m
+            </div>);
+          })}
         </div>
       )}
       <label style={{display:"flex",alignItems:"center",gap:6,marginTop:8,cursor:"pointer"}}>

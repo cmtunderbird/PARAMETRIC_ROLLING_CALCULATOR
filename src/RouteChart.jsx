@@ -18,6 +18,7 @@ import { calcMotions, getMotionStatus } from "./physics.js";
 import { sanitizeWxSnapshot } from "./weatherValidation.js";
 import { fetchRouteWeather } from "./weather/routeWeatherPipeline.js";
 import FetchProgressBar from "./ui/route/FetchProgressBar.jsx";
+import { useAppState, useAppActions } from "./state/appStore.jsx";
 import { calcCurrentPosition, ShipPositionLayer,
          ShipPolarDiagram, ShipInfoPanel } from "./ShipDashboard.jsx";
 // ── Extracted child components ──
@@ -104,6 +105,8 @@ function WpPopup({ wp, shipParams }) {
 
 // ═══ Main component ═══════════════════════════════════════════════════════════
 export default function RouteChart({ shipParams }) {
+  const appState = useAppState();
+  const appActions = useAppActions();
   const [route, setRoute] = useState(null);
   const [routeStats, setRouteStats] = useState(null);
   const [parseError, setParseError] = useState(null);
@@ -152,6 +155,22 @@ export default function RouteChart({ shipParams }) {
   const [pipelineRunning, setPipelineRunning] = useState(false);
   const [pipelineProgress, setPipelineProgress] = useState({ stage: null, pct: 0, detail: "" });
   const [pipelineFamily, setPipelineFamily] = useState(null);
+
+  // ── Route persistence: load saved route on mount, save on change ──
+  useEffect(() => {
+    if (!route && appState.lastRoute) {
+      setRoute(appState.lastRoute.route);
+      setFileName(appState.lastRoute.fileName || "Restored route");
+      if (appState.lastRoute.bospDT) setBospDT(appState.lastRoute.bospDT);
+      if (appState.lastRoute.voyageSpeed) setVoyageSpeed(appState.lastRoute.voyageSpeed);
+    }
+  }, []); // mount only
+
+  useEffect(() => {
+    if (route?.waypoints?.length) {
+      appActions.setLastRoute({ route, fileName, bospDT, voyageSpeed });
+    }
+  }, [route, fileName, bospDT, voyageSpeed]);
 
   // ── Dynamic polar context: hover point > scrubber position > live ship ──
   const [hoveredRouteIdx, setHoveredRouteIdx] = useState(null);

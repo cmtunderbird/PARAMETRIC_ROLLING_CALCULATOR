@@ -13,7 +13,7 @@ const STALE_MS = {
   marine_cmems:  3 * 3600 * 1000,   // CMEMS wave analysis+forecast (3-hourly cadence)
   physics_cmems: 1 * 3600 * 1000,   // CMEMS physics uo/vo/SST (1-hourly cadence)
 };
-const CACHE_VER = "v1";  // bump to nuke all caches after schema changes
+const CACHE_VER = "v2";  // v2: added provider field — bumped to flush old untagged entries
 const MAX_ENTRIES = 8;   // keep at most 8 cached areas in localStorage
 
 // ── Key helpers ───────────────────────────────────────────────────────────────
@@ -71,13 +71,14 @@ export function cacheGet(type, bounds, gridRes) {
 }
 
 // ── Write to cache ────────────────────────────────────────────────────────────
-export function cacheSet(type, bounds, gridRes, results) {
+export function cacheSet(type, bounds, gridRes, results, provider = "unknown") {
   try {
     evictOldEntries();
     const bKey = boundsKey(bounds, gridRes);
     const entry = {
       ver: CACHE_VER,
       type,
+      provider,
       fetchedAt: Date.now(),
       bounds,
       gridRes,
@@ -133,8 +134,8 @@ export function cacheStatus() {
         const e = JSON.parse(localStorage.getItem(k));
         const ageMin    = Math.round((Date.now() - e.fetchedAt) / 60000);
         const staleIn   = Math.round((STALE_MS[e.type] - (Date.now() - e.fetchedAt)) / 60000);
-        entries.push({ type: e.type, ageMin, staleInMin: Math.max(0, staleIn),
-                        pts: e.results?.length || 0, bounds: e.bounds });
+        entries.push({ type: e.type, provider: e.provider || "unknown", ageMin, staleInMin: Math.max(0, staleIn),
+                        pts: e.results?.length || 0, bounds: e.bounds, gridRes: e.gridRes });
       } catch { /* corrupt entry — skip */ }
     }
   } catch { /* localStorage unavailable */ }

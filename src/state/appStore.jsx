@@ -46,6 +46,7 @@ function persistState(state) {
       lonDeg: state.lonDeg, lonMin: state.lonMin, lonHemi: state.lonHemi,
       activeSources: state.activeSources,
       activeTab: state.activeTab,
+      lastRoute: state.lastRoute,
     };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
   } catch { /* quota exceeded or private mode — fail silently */ }
@@ -68,6 +69,7 @@ function makeInitialState() {
     lonMin:       saved?.lonMin       ?? 0.0,
     lonHemi:      saved?.lonHemi      ?? "W",
     activeSources: saved?.activeSources ?? ["open-meteo-marine", "open-meteo-weather"],
+    lastRoute:    saved?.lastRoute    ?? null,
     // Transient state — NOT persisted
     marineData:   null,
     windData:     null,
@@ -85,6 +87,7 @@ function appReducer(state, action) {
     case "SET_SPEED":       return { ...state, speed: action.value };
     case "SET_HEADING":     return { ...state, heading: action.value };
     case "SET_HOUR_IDX":    return { ...state, hourIdx: action.value };
+    case "SET_LAST_ROUTE":  return { ...state, lastRoute: action.value };
     case "SET_LOADING":     return { ...state, loading: action.value };
     case "SET_ERROR":       return { ...state, error: action.value };
     case "SET_LAST_FETCH":  return { ...state, lastFetch: action.value };
@@ -134,6 +137,7 @@ export function AppProvider({ children }) {
     state.preset, state.ship, state.speed, state.heading,
     state.locationKey, state.latDeg, state.latMin, state.latHemi,
     state.lonDeg, state.lonMin, state.lonHemi, state.activeSources, state.activeTab,
+    state.lastRoute,
   ]);
 
   return (
@@ -176,5 +180,6 @@ export function useAppActions() {
     fetchStart:   () => dispatch({ type: "FETCH_START" }),
     fetchDone:    (marine, wind) => dispatch({ type: "FETCH_DONE", marine, wind }),
     fetchError:   (msg) => dispatch({ type: "FETCH_ERROR", message: msg }),
+    setLastRoute: (v) => dispatch({ type: "SET_LAST_ROUTE", value: v }),
   };
 }
