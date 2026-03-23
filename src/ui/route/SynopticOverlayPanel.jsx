@@ -17,7 +17,9 @@ export default function SynopticOverlayPanel({
         Wave gradient {"\u00b7"} Isobars (4 hPa) {"\u00b7"} WMO Wind Barbs<br/>Pan/zoom to area of interest first.</div>
       <label style={lblSt}>Grid Resolution ({"\u00b0"})</label>
       <select value={gridRes} onChange={e=>setGridRes(parseFloat(e.target.value))} style={{...inputSt,marginBottom:8,cursor:"pointer"}}>
-        <option value={1.0}>1.0{"\u00b0"} {"\u2014"} fine (slower)</option>
+        <option value={0.25}>0.25{"\u00b0"} {"\u2014"} NOAA GFS native (slowest)</option>
+        <option value={0.5}>0.50{"\u00b0"} {"\u2014"} WW3 native</option>
+        <option value={1.0}>1.0{"\u00b0"} {"\u2014"} fine</option>
         <option value={2.0}>2.0{"\u00b0"} {"\u2014"} standard</option>
         <option value={3.0}>3.0{"\u00b0"} {"\u2014"} coarse (fast)</option>
         <option value={5.0}>5.0{"\u00b0"} {"\u2014"} overview</option>

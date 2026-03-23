@@ -90,15 +90,19 @@ export async function fetchRouteWeather({
   progress("source_probe", family.label);
 
   // ═══ STAGE 3: Build synoptic grid ═══
+  // ═══ STAGE 3: Build synoptic grid ═══
+  // Grid point cap depends on source: NOAA OPeNDAP is a single bbox request
+  // (can handle large grids), Open-Meteo is batched (10pts/request, rate limited).
+  const maxPts = family.marine === "noaa_wwiii" || family.marine === "noaa_gfs" ? 600 : 80;
   let effectiveGridRes = gridRes;
   let gridPts, gridBounds;
   if (mapBounds) {
     ({ points: gridPts, bounds: gridBounds } = buildGridPoints(mapBounds, effectiveGridRes));
-    while (gridPts.length > 80 && effectiveGridRes < 8.0) {
-      effectiveGridRes = parseFloat((effectiveGridRes + 0.5).toFixed(1));
+    while (gridPts.length > maxPts && effectiveGridRes < 8.0) {
+      effectiveGridRes = parseFloat((effectiveGridRes + 0.25).toFixed(2));
       ({ points: gridPts, bounds: gridBounds } = buildGridPoints(mapBounds, effectiveGridRes));
     }
-    if (gridPts.length > 1500) throw new Error(`Grid too large (${gridPts.length} pts). Zoom in.`);
+    if (gridPts.length > 2000) throw new Error(`Grid too large (${gridPts.length} pts). Zoom in or increase resolution.`);
   }
   if (forceRefresh && gridBounds) {
     cacheInvalidate("marine", gridBounds, effectiveGridRes);

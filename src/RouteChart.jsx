@@ -120,7 +120,7 @@ export default function RouteChart({ shipParams }) {
   const [vwError, setVwError] = useState(null);
   const [marineGrid, setMarineGrid] = useState(null);
   const [atmoGrid, setAtmoGrid] = useState(null);
-  const [gridRes, setGridRes] = useState(2.0);
+  const [gridRes, setGridRes] = useState(0.5);
   const [gridMode, setGridMode] = useState("waveHeight");
   const [showGrid, setShowGrid] = useState(true);
   const [showAtmo, setShowAtmo] = useState(true);
@@ -332,11 +332,11 @@ export default function RouteChart({ shipParams }) {
       const bounds = { south:b.getSouth(), north:b.getNorth(), west:b.getWest(), east:b.getEast() };
       let effectiveGridRes = gridRes;
       let { points, bounds: gb } = buildGridPoints(bounds, effectiveGridRes);
-      while (points.length > 80 && effectiveGridRes < 8.0) {
-        effectiveGridRes = parseFloat((effectiveGridRes + 0.5).toFixed(1));
+      while (points.length > 600 && effectiveGridRes < 8.0) {
+        effectiveGridRes = parseFloat((effectiveGridRes + 0.25).toFixed(2));
         ({ points, bounds: gb } = buildGridPoints(bounds, effectiveGridRes));
       }
-      if (points.length > 1500) throw new Error(`Grid too large (${points.length} pts). Zoom in.`);
+      if (points.length > 2000) throw new Error(`Grid too large (${points.length} pts). Zoom in or increase resolution.`);
       if (forceRefresh) { cacheInvalidate("marine",gb,effectiveGridRes); cacheInvalidate("atmo",gb,effectiveGridRes);
         cacheInvalidate("marine_cmems",gb,0.083); cacheInvalidate("physics_cmems",gb,0.083); }
       setGridProgress({step:`Marine waves (${effectiveGridRes}° grid, ${points.length} pts)`,done:0,total:Math.ceil(points.length/10)});
