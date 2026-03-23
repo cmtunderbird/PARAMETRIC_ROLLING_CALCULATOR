@@ -227,19 +227,22 @@ export function ShipPolarDiagram({ pos, weather, shipParams }) {
     const a = bearing_deg * DEG_TO_RAD - Math.PI / 2;
     return { x: CX + radius * Math.cos(a), y: CY + radius * Math.sin(a) };
   }
-  function Arrow({ bearing, len, color, dash, label, width=2.5 }) {
+  function Arrow({ bearing, len, color, dash, label, width=1.2 }) {
     const tip  = vecPt(bearing, len);
-    const la   = vecPt(bearing + 150, len - 12);
-    const ra   = vecPt(bearing - 150, len - 12);
+    // Small tick at tip instead of oversized arrowhead
+    const tickL = vecPt(bearing + 160, len - 6);
+    const tickR = vecPt(bearing - 160, len - 6);
     return (
       <g>
         <line x1={CX} y1={CY} x2={tip.x} y2={tip.y}
-          stroke={color} strokeWidth={width} strokeDasharray={dash||"none"} strokeLinecap="round" opacity="0.92"/>
-        <polygon points={`${tip.x},${tip.y} ${la.x},${la.y} ${ra.x},${ra.y}`}
-          fill={color} opacity="0.92"/>
-        {label && <text x={vecPt(bearing, len + 14).x} y={vecPt(bearing, len + 14).y}
+          stroke={color} strokeWidth={width} strokeDasharray={dash||"none"} strokeLinecap="round" opacity="0.85"/>
+        <line x1={tickL.x} y1={tickL.y} x2={tip.x} y2={tip.y}
+          stroke={color} strokeWidth={width} opacity="0.85"/>
+        <line x1={tickR.x} y1={tickR.y} x2={tip.x} y2={tip.y}
+          stroke={color} strokeWidth={width} opacity="0.85"/>
+        {label && <text x={vecPt(bearing, len + 10).x} y={vecPt(bearing, len + 10).y}
           textAnchor="middle" dominantBaseline="middle"
-          style={{fontSize:9,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",fill:color}}>{label}</text>}
+          style={{fontSize:7,fontWeight:700,fontFamily:"'JetBrains Mono',monospace",fill:color,opacity:0.9}}>{label}</text>}
       </g>
     );
   }
@@ -274,7 +277,7 @@ export function ShipPolarDiagram({ pos, weather, shipParams }) {
       dangerArcs.push(
         <polyline key={`danger-${speed}`}
           points={arcPts.join(" ")} fill="none"
-          stroke="#FF0040" strokeWidth="3" strokeLinecap="round" opacity="0.75"/>
+          stroke="#FF0040" strokeWidth="1.5" strokeLinecap="round" opacity="0.7"/>
       );
     }
   }
@@ -315,24 +318,24 @@ export function ShipPolarDiagram({ pos, weather, shipParams }) {
         {/* ── Outer ring ── */}
         <circle cx={CX} cy={CY} r={MAX_R} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="1"/>
 
-        {/* ── Environmental vectors ── */}
-        {weather?.waveDir  != null && <Arrow bearing={waveDir}  len={MAX_R-10} color="#EF4444" width={2.5} label="WAV"/>}
-        {weather?.swellDir != null && <Arrow bearing={swellDir} len={MAX_R-22} color="#F59E0B" width={2}   label="SWL" dash="6,3"/>}
-        {weather?.windDir  != null && <Arrow bearing={windDir}  len={MAX_R-16} color="#E2E8F0" width={1.8} label="WND" dash="3,3"/>}
+        {/* ── Environmental vectors — thin lines, heatmap stays dominant ── */}
+        {weather?.waveDir  != null && <Arrow bearing={waveDir}  len={MAX_R-20} color="#EF4444" width={1.5} label="WAV"/>}
+        {weather?.swellDir != null && <Arrow bearing={swellDir} len={MAX_R-32} color="#F59E0B" width={1.2} label="SWL" dash="5,3"/>}
+        {weather?.windDir  != null && <Arrow bearing={windDir}  len={MAX_R-26} color="#E2E8F0" width={1}   label="WND" dash="3,2"/>}
 
         {/* ── Ship heading + COG vectors ── */}
-        <Arrow bearing={cog} len={MAX_R-4} color="#3B82F6" width={2} dash="9,5" label="COG"/>
-        <Arrow bearing={hdg} len={MAX_R-4} color="#22D3EE" width={3}            label="HDG"/>
+        <Arrow bearing={cog} len={MAX_R-14} color="#3B82F6" width={1.2} dash="7,4" label="COG"/>
+        <Arrow bearing={hdg} len={MAX_R-8}  color="#22D3EE" width={2}            label="HDG"/>
 
         {/* ── Current ship state dot ── */}
-        <circle cx={curPt.x} cy={curPt.y} r={7} fill="#22D3EE" stroke="#fff" strokeWidth="1.5" opacity="0.95"/>
+        <circle cx={curPt.x} cy={curPt.y} r={4} fill="#22D3EE" stroke="#fff" strokeWidth="1" opacity="0.95"/>
         <text x={curPt.x} y={curPt.y} textAnchor="middle" dominantBaseline="middle"
-          style={{fontSize:6,fontWeight:900,fill:"#0F172A",fontFamily:"'JetBrains Mono',monospace"}}>▲</text>
+          style={{fontSize:5,fontWeight:900,fill:"#0F172A",fontFamily:"'JetBrains Mono',monospace"}}>▲</text>
 
         {/* ── Centre ── */}
-        <circle cx={CX} cy={CY} r={18} fill="#0F172A" stroke="#334155" strokeWidth="1.2"/>
-        <text x={CX} y={CY-4}   textAnchor="middle" style={{fontSize:7,fill:"#94A3B8",fontFamily:"'JetBrains Mono',monospace"}}>PARAM</text>
-        <text x={CX} y={CY+5}   textAnchor="middle" style={{fontSize:7,fill:"#94A3B8",fontFamily:"'JetBrains Mono',monospace"}}>RISK</text>
+        <circle cx={CX} cy={CY} r={14} fill="#0F172A" stroke="#334155" strokeWidth="1"/>
+        <text x={CX} y={CY-3}   textAnchor="middle" style={{fontSize:6,fill:"#94A3B8",fontFamily:"'JetBrains Mono',monospace"}}>PARAM</text>
+        <text x={CX} y={CY+4}   textAnchor="middle" style={{fontSize:6,fill:"#94A3B8",fontFamily:"'JetBrains Mono',monospace"}}>RISK</text>
       </svg>
 
       {/* ── Thermal legend bar ── */}

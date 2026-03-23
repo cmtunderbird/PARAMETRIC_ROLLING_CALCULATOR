@@ -538,8 +538,28 @@ export default function RouteChart({ shipParams }) {
           </MapContainer>
         </div>
 
-        {/* Polar Diagram */}
-        {showPolar && shipPos?.status === "underway" && (
+        {/* Polar Diagram — driven by scrubber when chart loaded, else real-time */}
+        {showPolar && (() => {
+          // Compute scrubber-driven position when synoptic chart is loaded
+          const firstResult = marineGrid?.results?.find(r => r.times?.length > 0);
+          const baseMs = firstResult ? (firstResult.times[0] < 1e12 ? firstResult.times[0] * 1000 : firstResult.times[0]) : null;
+          const chartTimeMs = baseMs ? baseMs + chartHourIdx * 3600000 : null;
+          const polarPos = (chartTimeMs && voyageWPs?.length)
+            ? calcCurrentPosition(voyageWPs, chartTimeMs) : shipPos;
+          if (!polarPos || polarPos.status !== "underway") return null;
+
+          // Find nearest voyage weather point to polar position
+          const nearestVW = voyageWeather?.length
+            ? voyageWeather.reduce((best, p) => {
+                const d = Math.hypot(p.lat - polarPos.lat, p.lon - polarPos.lon);
+                const db = Math.hypot(best.lat - polarPos.lat, best.lon - polarPos.lon);
+                return d < db ? p : best;
+              }) : null;
+          const polarWx = nearestVW?.weather ?? shipWx;
+          const polarMotion = nearestVW?.motions ?? shipMotion;
+          const polarMStat = nearestVW?.motionStatus ?? shipMStat;
+
+          return (
           <div style={{background:panelBg,borderRadius:8,padding:16,border:"1px solid #7C3AED50"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
               <div>
@@ -547,37 +567,38 @@ export default function RouteChart({ shipParams }) {
                   🎯 Synoptic Polar Risk Diagram — Parametric Rolling</div>
                 <div style={{color:"#64748B",fontSize:10,marginTop:3}}>
                   Thermal heatmap: risk intensity across all headings × speeds &nbsp;|&nbsp;
-                  Tw = {shipWx?.wavePeriod?.toFixed(1)||"—"}s &nbsp;·&nbsp;
-                  Hs = {shipWx?.waveHeight?.toFixed(1)||"—"}m &nbsp;·&nbsp;
+                  Tw = {polarWx?.wavePeriod?.toFixed(1)||"—"}s &nbsp;·&nbsp;
+                  Hs = {polarWx?.waveHeight?.toFixed(1)||"—"}m &nbsp;·&nbsp;
                   Tᵣ = {(shipParams?.Tr||14).toFixed(1)}s</div>
               </div>
               <div style={{textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontSize:10}}>
-                <div style={{color:"#22D3EE"}}>Pos: {Math.abs(shipPos.lat).toFixed(3)}°{shipPos.lat>=0?"N":"S"} {Math.abs(shipPos.lon).toFixed(3)}°{shipPos.lon>=0?"E":"W"}</div>
-                <div style={{color:"#94A3B8"}}>Hdg: {shipPos.heading.toFixed(0)}°T &nbsp; COG: {shipPos.cog.toFixed(0)}°T</div>
+                <div style={{color:"#22D3EE"}}>Pos: {Math.abs(polarPos.lat).toFixed(3)}°{polarPos.lat>=0?"N":"S"} {Math.abs(polarPos.lon).toFixed(3)}°{polarPos.lon>=0?"E":"W"}</div>
+                <div style={{color:"#94A3B8"}}>Hdg: {polarPos.heading.toFixed(0)}°T &nbsp; COG: {polarPos.cog.toFixed(0)}°T</div>
+                {chartTimeMs && <div style={{color:"#F59E0B",fontSize:9}}>+{chartHourIdx}h — {new Date(chartTimeMs).toUTCString().slice(5,22)}</div>}
               </div>
             </div>
             <div style={{display:"flex",gap:20,alignItems:"flex-start",flexWrap:"wrap"}}>
-              <ShipPolarDiagram pos={shipPos} weather={shipWx} shipParams={shipParams} />
+              <ShipPolarDiagram pos={polarPos} weather={polarWx} shipParams={shipParams} />
               <div style={{flex:1,minWidth:220,display:"flex",flexDirection:"column",gap:10}}>
                 <div style={{padding:12,background:"#0F172A",borderRadius:6,border:"1px solid #334155"}}>
                   <div style={{color:"#F59E0B",fontSize:10,fontWeight:700,letterSpacing:"0.1em",marginBottom:8,textTransform:"uppercase"}}>Current State</div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}>
-                    {[{l:"Ship Heading",v:`${shipPos.heading.toFixed(0)}°T`,c:"#22D3EE"},
-                      {l:"COG",v:`${shipPos.cog.toFixed(0)}°T`,c:"#3B82F6"},
-                      {l:"Wave dir (FROM)",v:`${shipWx?.waveDir?.toFixed(0)||"—"}°T`,c:"#EF4444"},
-                      {l:"Swell dir (FROM)",v:`${shipWx?.swellDir?.toFixed(0)||"—"}°T`,c:"#F59E0B"},
-                      {l:"Wind dir (FROM)",v:`${shipWx?.windDir?.toFixed(0)||"—"}°T`,c:"#E2E8F0"},
-                      {l:"Rel. Wave angle",v:`${(((shipWx?.waveDir||0)-(shipPos?.heading||0)+360)%360).toFixed(0)}°`,c:"#94A3B8"},
+                    {[{l:"Ship Heading",v:`${polarPos.heading.toFixed(0)}°T`,c:"#22D3EE"},
+                      {l:"COG",v:`${polarPos.cog.toFixed(0)}°T`,c:"#3B82F6"},
+                      {l:"Wave dir (FROM)",v:`${polarWx?.waveDir?.toFixed(0)||"—"}°T`,c:"#EF4444"},
+                      {l:"Swell dir (FROM)",v:`${polarWx?.swellDir?.toFixed(0)||"—"}°T`,c:"#F59E0B"},
+                      {l:"Wind dir (FROM)",v:`${polarWx?.windDir?.toFixed(0)||"—"}°T`,c:"#E2E8F0"},
+                      {l:"Rel. Wave angle",v:`${(((polarWx?.waveDir||0)-(polarPos?.heading||0)+360)%360).toFixed(0)}°`,c:"#94A3B8"},
                     ].map(({l,v,c})=>(<div key={l}><div style={{color:"#64748B",fontSize:9}}>{l}</div><div style={{color:c,fontWeight:700}}>{v}</div></div>))}
                   </div>
                 </div>
-                {shipMotion && <div style={{padding:12,background:"#0F172A",borderRadius:6,border:`1px solid ${shipMStat?.color||"#334155"}50`}}>
-                  <div style={{color:shipMStat?.color||"#F59E0B",fontSize:12,fontWeight:800,marginBottom:8}}>{shipMStat?.label||"—"}</div>
-                  {[{l:"Roll amplitude",v:`${shipMotion.roll?.toFixed(1)}°`,alert:shipMotion.roll>=25},
-                    {l:"Pitch amplitude",v:`${shipMotion.pitch?.toFixed(1)}°`,alert:shipMotion.pitch>=8},
-                    {l:"Bridge accel",v:`${shipMotion.bridgeAcc?.toFixed(2)} m/s²`,alert:shipMotion.bridgeAcc>=2.94},
-                    {l:"Slam probability",v:`${(shipMotion.slam*100).toFixed(1)}%`,alert:shipMotion.slam>=0.1},
-                    {l:"Parametric risk",v:`${(shipMotion.paramRisk*100).toFixed(0)}%`,alert:shipMotion.paramRisk>=0.5},
+                {polarMotion && <div style={{padding:12,background:"#0F172A",borderRadius:6,border:`1px solid ${polarMStat?.color||"#334155"}50`}}>
+                  <div style={{color:polarMStat?.color||"#F59E0B",fontSize:12,fontWeight:800,marginBottom:8}}>{polarMStat?.label||"—"}</div>
+                  {[{l:"Roll amplitude",v:`${polarMotion.roll?.toFixed(1)}°`,alert:polarMotion.roll>=25},
+                    {l:"Pitch amplitude",v:`${polarMotion.pitch?.toFixed(1)}°`,alert:polarMotion.pitch>=8},
+                    {l:"Bridge accel",v:`${polarMotion.bridgeAcc?.toFixed(2)} m/s²`,alert:polarMotion.bridgeAcc>=2.94},
+                    {l:"Slam probability",v:`${(polarMotion.slam*100).toFixed(1)}%`,alert:polarMotion.slam>=0.1},
+                    {l:"Parametric risk",v:`${(polarMotion.paramRisk*100).toFixed(0)}%`,alert:polarMotion.paramRisk>=0.5},
                   ].map(({l,v,alert})=>(<div key={l} style={{display:"flex",justifyContent:"space-between",marginBottom:4,fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}>
                     <span style={{color:"#64748B"}}>{l}</span><span style={{color:alert?"#EF4444":"#E2E8F0",fontWeight:alert?800:400}}>{v}</span></div>))}
                 </div>}
@@ -586,7 +607,8 @@ export default function RouteChart({ shipParams }) {
               </div>
             </div>
           </div>
-        )}
+          );
+        })()}
 
         <VoyageRiskTimeline voyageWeather={voyageWeather} voyageWPs={voyageWPs}
           bospDT={bospDT} maxRisk={maxRisk} voyageDaysStr={voyageDaysStr} />
