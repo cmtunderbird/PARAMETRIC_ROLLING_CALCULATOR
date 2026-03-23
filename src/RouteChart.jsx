@@ -1,7 +1,7 @@
 // ─── RouteChart.jsx ───────────────────────────────────────────────────────────
 // Route chart — map + route display, coordinates child panels.
 // Panels extracted to src/ui/route/ — Phase 1, Item 2
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { MapContainer, TileLayer, Polyline, Marker, Popup, Tooltip, useMap } from "react-leaflet";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
@@ -152,6 +152,9 @@ export default function RouteChart({ shipParams }) {
   const [pipelineRunning, setPipelineRunning] = useState(false);
   const [pipelineProgress, setPipelineProgress] = useState({ stage: null, pct: 0, detail: "" });
   const [pipelineFamily, setPipelineFamily] = useState(null);
+
+  // ── Dynamic polar context: hover point > scrubber position > live ship ──
+  const [hoveredRouteIdx, setHoveredRouteIdx] = useState(null);
   const anyLoading = vwLoading||gridLoading;
   const [shipPos, setShipPos] = useState(null);
   const [shipWx, setShipWx] = useState(null);
@@ -365,6 +368,47 @@ export default function RouteChart({ shipParams }) {
   const voyageDaysStr = eosp ? ((eosp.etaMs - new Date(bospDT).getTime())/86400000).toFixed(1) : '—';
   const maxRisk = voyageWeather ? Math.max(...voyageWeather.map(p=>p.riskSeverity)) : 0;
 
+  // ── Dynamic polar context: resolves hover > scrubber > live ship ──────────
+  const polarCtx = useMemo(() => {
+    // Priority 1: Hovered route point
+    if (hoveredRouteIdx != null && voyageWeather?.[hoveredRouteIdx]) {
+      const pt = voyageWeather[hoveredRouteIdx];
+      return { source: "hover", label: `WP hover — ${pt.name || `Sample ${hoveredRouteIdx + 1}`}`,
+        lat: pt.lat, lon: pt.lon, heading: pt.heading || 0, cog: pt.heading || 0,
+        weather: pt.weather, motions: pt.motions, motionStatus: pt.motionStatus,
+        etaMs: pt.etaMs };
+    }
+    // Priority 2: Scrubber position — find voyage point closest to scrubber time
+    if (voyageWeather?.length && marineGrid?.results?.[0]?.times && chartHourIdx > 0) {
+      const times = marineGrid.results[0].times;
+      const scrubMs = typeof times[chartHourIdx] === "number" && times[chartHourIdx] < 1e12
+        ? times[chartHourIdx] * 1000 : times[chartHourIdx];
+      if (scrubMs) {
+        const closest = voyageWeather.reduce((best, pt) =>
+          Math.abs((pt.etaMs || 0) - scrubMs) < Math.abs((best.etaMs || 0) - scrubMs) ? pt : best);
+        if (closest?.weather) return {
+          source: "scrubber", label: `Projected — ${new Date(scrubMs).toUTCString().slice(0, 22)} UTC`,
+          lat: closest.lat, lon: closest.lon, heading: closest.heading || 0, cog: closest.heading || 0,
+          weather: closest.weather, motions: closest.motions, motionStatus: closest.motionStatus,
+          etaMs: closest.etaMs };
+      }
+    }
+    // Priority 3: Live ship position
+    if (shipPos?.status === "underway" && shipWx) {
+      return { source: "live", label: "Live ship position",
+        lat: shipPos.lat, lon: shipPos.lon, heading: shipPos.heading, cog: shipPos.cog,
+        weather: shipWx, motions: shipMotion, motionStatus: shipMStat };
+    }
+    // Fallback: first voyage point with weather
+    if (voyageWeather?.length) {
+      const first = voyageWeather.find(p => p.weather);
+      if (first) return { source: "route", label: `BOSP — ${first.name || "WP1"}`,
+        lat: first.lat, lon: first.lon, heading: first.heading || 0, cog: first.heading || 0,
+        weather: first.weather, motions: first.motions, motionStatus: first.motionStatus };
+    }
+    return null;
+  }, [hoveredRouteIdx, voyageWeather, chartHourIdx, marineGrid, shipPos, shipWx, shipMotion, shipMStat]);
+
   // ═══ RENDER ═══════════════════════════════════════════════════════════════
   return (
     <div style={{display:"grid",gridTemplateColumns:"310px 1fr",gap:16,minHeight:650}}>
@@ -495,7 +539,11 @@ export default function RouteChart({ shipParams }) {
             {route && <FitBounds waypoints={route.waypoints} />}
             {voyageWeather?.length > 1 && voyageWeather.slice(0,-1).map((pt,i)=>(
               <Polyline key={`seg-${i}`} positions={[[pt.lat,pt.lon],[voyageWeather[i+1].lat,voyageWeather[i+1].lon]]}
-                pathOptions={{color:riskColor(pt.riskSeverity),weight:5,opacity:0.9}} />
+                pathOptions={{color:riskColor(pt.riskSeverity),weight:hoveredRouteIdx===i?7:5,opacity:0.9}}
+                eventHandlers={{
+                  mouseover: () => setHoveredRouteIdx(i),
+                  mouseout: () => setHoveredRouteIdx(null),
+                }} />
             ))}
             {route && !voyageWeather && <Polyline positions={route.waypoints.map(w=>[w.lat,w.lon])}
               pathOptions={{color:"#F59E0B",weight:3,opacity:0.85,dashArray:"8,6"}} />}
