@@ -434,16 +434,10 @@ export default function RouteChart({ shipParams }) {
           voyageSpeed={voyageSpeed} setVoyageSpeed={setVoyageSpeed}
           calcVoyage={calcVoyage} voyageWPs={voyageWPs} eospStr={eospStr} voyageDaysStr={voyageDaysStr} />
 
-        {/* Live Ship Position + Polar toggle */}
+        {/* Live Ship Position */}
         {voyageWPs && <Panel>
           {SH("⛵ Ship Position")}
           <ShipInfoPanel pos={shipPos} weather={shipWx} shipParams={shipParams} motions={shipMotion} motionStatus={shipMStat} />
-          {voyageWeather?.length > 0 && (
-            <button onClick={() => setShowPolar(p => !p)}
-              style={{...btnSt,width:"100%",marginTop:10,
-                background:showPolar?"linear-gradient(90deg,#7C3AED,#6D28D9)":"linear-gradient(90deg,#334155,#475569)",color:"#E2E8F0"}}>
-              {showPolar ? "▲ HIDE POLAR DIAGRAM" : "🎯 SHOW POLAR RISK DIAGRAM"}</button>
-          )}
         </Panel>}
 
         {/* ── Unified Route Weather Fetch (single action) ── */}
@@ -582,8 +576,8 @@ export default function RouteChart({ shipParams }) {
           </MapContainer>
         </div>
 
-        {/* Polar Diagram — driven by scrubber, or first WP when no live position */}
-        {showPolar && voyageWeather?.length > 0 && (() => {
+        {/* Polar Diagram — always shown when voyage weather available */}
+        {voyageWeather?.length > 0 && (() => {
           // Compute scrubber-driven position when synoptic chart is loaded
           const firstResult = marineGrid?.results?.find(r => r.times?.length > 0);
           const baseMs = firstResult ? (firstResult.times[0] < 1e12 ? firstResult.times[0] * 1000 : firstResult.times[0]) : null;
