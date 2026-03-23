@@ -191,13 +191,13 @@ function waitReady() {
   });
 }
 
-function nodeGet(urlStr, authHeader) {
+function nodeGet(urlStr, authHeader, timeoutMs = 120000) {
   return new Promise((resolve, reject) => {
     const u = new URL(urlStr);
     const req = http.request(
       { hostname: u.hostname, port: u.port || 5174,
         path: u.pathname + u.search, method: 'GET',
-        headers: { Authorization: authHeader }, timeout: 120000 },
+        headers: { Authorization: authHeader }, timeout: timeoutMs },
       (res) => {
         let d = '';
         res.on('data', c => { d += c; });
@@ -242,7 +242,7 @@ ipcMain.handle('cmems:physics', async (_, { user, pass, south, north, west, east
   try {
     await waitReady();
     const q = `south=${south}&north=${north}&west=${west}&east=${east}`;
-    return await nodeGet(`http://localhost:${PORT}/api/cmems/physics?${q}`, basicAuth(user, pass));
+    return await nodeGet(`http://localhost:${PORT}/api/cmems/physics?${q}`, basicAuth(user, pass), 180000);
   } catch(e) { throw new Error(`CMEMS physics: ${e.message}`); }
 });
 

@@ -74,10 +74,10 @@ const PORT = 5174;
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-// ── Per-request timeout: 130s (covers worst-case first-dataset-open ~120s) ───
+// ── Per-request timeout: 180s (covers worst-case first-dataset-open ~120s) ───
 app.use((req, res, next) => {
-  res.setTimeout(130_000, () => {
-    if (!res.headersSent) res.status(503).json({ error: "Request timeout (130s)" });
+  res.setTimeout(180_000, () => {
+    if (!res.headersSent) res.status(503).json({ error: "Request timeout (180s)" });
   });
   next();
 });
@@ -148,7 +148,7 @@ function spawnWorker() {
 spawnWorker();
 
 // ── Send a command to the worker and await its response ───────────────────────
-const WORKER_TIMEOUT = 120_000; // 2 min — first dataset open can take ~60s
+const WORKER_TIMEOUT = 180_000; // 3 min — first CMEMS dataset open can take ~120s
 
 function workerCall(cmd) {
   return new Promise((resolve, reject) => {

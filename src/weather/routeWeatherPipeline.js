@@ -187,6 +187,7 @@ export async function fetchRouteWeather({
       progress("currents", `${phyResult.results?.length} pts`);
     } catch (e) {
       log.push({ stage: "currents", error: e.message });
+      onProgress("Currents unavailable (continuing)...", 58, e.message.includes("timeout") ? "First CMEMS connection takes ~2min — retry later" : e.message);
     }
   }
 
