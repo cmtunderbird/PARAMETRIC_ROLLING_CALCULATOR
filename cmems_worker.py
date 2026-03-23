@@ -119,13 +119,14 @@ def handle_physics(cmd):
             out.append(pt)
     return out
 
-# ── NOAA GFS handler — Phase 3, Item 19 ──────────────────────────────────────
-# Fetches 10m wind (U/V → speed/dir) + MSLP from GFS 0.25° via NOMADS OPeNDAP.
-# No API key required. Uses xarray + netCDF4 for direct OPeNDAP access.
+# ── NOAA GFS handler — GRIB filter replacement (OPeNDAP retired Feb 2026) ────
+# Fetches 10m wind (U/V → speed/dir) + MSLP from GFS 0.25° via NOMADS GRIB filter.
+# Each forecast hour is a separate HTTP request returning a small subsetted GRIB2 file.
+# Decoded with xarray + cfgrib backend.
+
+import tempfile, urllib.request, time as _time
 
 def _gfs_latest_runs():
-    """Yield (date_str, hour_str) for recent GFS runs, newest first.
-    GFS runs at 00/06/12/18z; data available ~4.5h after run start."""
     from datetime import datetime, timedelta, timezone
     now = datetime.now(timezone.utc)
     for hours_back in [5, 11, 17, 23, 29, 35]:
@@ -133,75 +134,117 @@ def _gfs_latest_runs():
         run_hour = (candidate.hour // 6) * 6
         yield candidate.strftime("%Y%m%d"), f"{run_hour:02d}"
 
+def _download_grib(url, dest):
+    """Download a GRIB2 file from NOMADS GRIB filter."""
+    req = urllib.request.Request(url, headers={"User-Agent": "PRC/1.0"})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        data = resp.read()
+        if b"<!doctype" in data[:200].lower() or b"<html" in data[:200].lower():
+            raise ValueError("Server returned HTML instead of GRIB2 — run may not be available yet")
+        with open(dest, "wb") as f:
+            f.write(data)
+    return dest
+
 def handle_noaa_gfs(cmd):
     import xarray as xr
     s, n = cmd["south"], cmd["north"]
     w, e = cmd["west"], cmd["east"]
     forecast_hours = cmd.get("forecast_hours", 120)
-    max_steps = min(forecast_hours // 3, 40)  # GFS 0.25 is 3-hourly
-
-    # Normalise longitudes to 0-360 for GFS grid
-    w360 = w % 360 if w < 0 else w
-    e360 = e % 360 if e < 0 else e
+    # Fetch every 6h for speed (0,6,12,...,120 = 21 files)
+    step = 6
+    fhours = list(range(0, min(forecast_hours, 121), step))
 
     last_err = None
     for run_date, run_hour in _gfs_latest_runs():
-        url = f"https://nomads.ncep.noaa.gov/dods/gfs_0p25/gfs{run_date}/gfs_0p25_{run_hour}z"
+        tmpdir = tempfile.mkdtemp(prefix="prc_gfs_")
         try:
-            ds = xr.open_dataset(url, engine="netcdf4")
-            sub = ds[["ugrd10m", "vgrd10m", "prmslmsl"]].isel(
-                time=slice(0, max_steps)
-            ).sel(lat=slice(s, n),
-                  lon=slice(w360, e360) if w360 < e360 else slice(0, 360))
-
-            lats = sub.lat.values.tolist()
-            lons = sub.lon.values.tolist()
-            import pandas as pd
-            base_time = pd.Timestamp(f"{run_date} {run_hour}:00", tz="UTC")
+            all_ds = []
             times_ms = []
-            for t in sub.time.values:
+            import pandas as pd
+            base = pd.Timestamp(f"{run_date} {run_hour}:00", tz="UTC")
+
+            for fh in fhours:
+                fname = f"gfs.t{run_hour}z.pgrb2.0p25.f{fh:03d}"
+                url = (f"https://nomads.ncep.noaa.gov/cgi-bin/filter_gfs_0p25.pl?"
+                       f"dir=/gfs.{run_date}/{run_hour}/atmos&file={fname}"
+                       f"&var_UGRD=on&var_VGRD=on&var_PRMSL=on"
+                       f"&lev_10_m_above_ground=on&lev_mean_sea_level=on"
+                       f"&subregion=&toplat={n}&leftlon={w}&rightlon={e}&bottomlat={s}")
+                dest = os.path.join(tmpdir, f"gfs_f{fh:03d}.grib2")
+                _download_grib(url, dest)
+                times_ms.append(int((base + pd.Timedelta(hours=fh)).timestamp() * 1000))
+                _time.sleep(0.5)  # NOMADS rate limit
+
+            # Decode all GRIB2 files
+            for fh_idx, fh in enumerate(fhours):
+                dest = os.path.join(tmpdir, f"gfs_f{fh:03d}.grib2")
                 try:
-                    times_ms.append(int(pd.Timestamp(t).timestamp() * 1000))
-                except:
-                    times_ms.append(int(base_time.timestamp() * 1000))
+                    ds = xr.open_dataset(dest, engine="cfgrib",
+                        backend_kwargs={"indexpath": ""})
+                    all_ds.append((fh_idx, ds))
+                except Exception as ex:
+                    continue
+
+            if not all_ds:
+                raise ValueError("No GRIB2 files decoded successfully")
+
+            # Extract grid from first file
+            sample = all_ds[0][1]
+            lats = sample.latitude.values.tolist()
+            lons = sample.longitude.values.tolist()
 
             out = []
-            for li, lat in enumerate(lats):
-                for loi, lon in enumerate(lons):
-                    u_arr = sub["ugrd10m"].isel(lat=li, lon=loi).values
-                    v_arr = sub["vgrd10m"].isel(lat=li, lon=loi).values
-                    p_arr = sub["prmslmsl"].isel(lat=li, lon=loi).values
+            for lat in lats:
+                for lon in lons:
                     speed_kts, wind_dir, mslp = [], [], []
-                    for ti in range(len(u_arr)):
-                        u = float(u_arr[ti]) if math.isfinite(float(u_arr[ti])) else 0
-                        v = float(v_arr[ti]) if math.isfinite(float(v_arr[ti])) else 0
-                        spd_ms = math.sqrt(u*u + v*v)
-                        speed_kts.append(round(spd_ms / 0.51444, 1))
+                    for fh_idx, ds in all_ds:
+                        try:
+                            u = float(ds["u10"].sel(latitude=lat, longitude=lon, method="nearest").values)
+                            v = float(ds["v10"].sel(latitude=lat, longitude=lon, method="nearest").values)
+                        except:
+                            try:
+                                u = float(ds["u"].sel(latitude=lat, longitude=lon, method="nearest").values)
+                                v = float(ds["v"].sel(latitude=lat, longitude=lon, method="nearest").values)
+                            except:
+                                u, v = 0, 0
+                        spd = math.sqrt(u*u + v*v)
+                        speed_kts.append(round(spd / 0.51444, 1))
                         d = (math.degrees(math.atan2(-u, -v)) + 360) % 360
                         wind_dir.append(round(d, 0))
-                        p = float(p_arr[ti])
-                        mslp.append(round(p / 100, 1) if math.isfinite(p) else None)
+                        try:
+                            p = float(ds["prmsl"].sel(latitude=lat, longitude=lon, method="nearest").values)
+                            mslp.append(round(p / 100, 1) if math.isfinite(p) else None)
+                        except:
+                            try:
+                                p = float(ds["msl"].sel(latitude=lat, longitude=lon, method="nearest").values)
+                                mslp.append(round(p / 100, 1) if math.isfinite(p) else None)
+                            except:
+                                mslp.append(None)
                     disp_lon = lon - 360 if lon > 180 else lon
                     out.append({
                         "lat": round(lat, 3), "lon": round(disp_lon, 3),
                         "times": times_ms, "source": "noaa_gfs",
                         "windKts": speed_kts, "windDir": wind_dir, "mslp": mslp,
                     })
-            ds.close()
+
+            # Cleanup
+            for _, ds in all_ds:
+                ds.close()
+            import shutil
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
             return {"ok": True, "data": out,
                     "run": f"{run_date}/{run_hour}z",
                     "points": len(out), "steps": len(times_ms)}
         except Exception as exc:
             last_err = str(exc)
+            import shutil
+            shutil.rmtree(tmpdir, ignore_errors=True)
             continue
     return {"ok": False, "error": f"All GFS runs failed: {last_err}"}
 
-# ── NOAA WaveWatch III handler — Phase 3, Item 20 ────────────────────────────
-# Fetches wave model data (Hs, Tp, Dir) from NOMADS multi_1 product via OPeNDAP.
-# WW3 uses 0.5° global grid, 3-hourly, updated 4x daily.
-
+# ── NOAA WaveWatch III — GRIB filter replacement ─────────────────────────────
 def _wwiii_latest_runs():
-    """Yield (date_str, hour_str) for recent WW3 multi_1 runs."""
     from datetime import datetime, timedelta, timezone
     now = datetime.now(timezone.utc)
     for hours_back in [6, 12, 18, 24, 30, 36]:
@@ -214,62 +257,89 @@ def handle_noaa_wwiii(cmd):
     s, n = cmd["south"], cmd["north"]
     w, e = cmd["west"], cmd["east"]
     forecast_hours = cmd.get("forecast_hours", 120)
-    max_steps = min(forecast_hours // 3, 40)
+    step = 6
+    fhours = list(range(0, min(forecast_hours, 121), step))
 
-    # WW3 multi_1 uses 0-360 longitude
+    # WW3 uses 0-360 longitude
     w360 = w % 360 if w < 0 else w
     e360 = e % 360 if e < 0 else e
 
     last_err = None
     for run_date, run_hour in _wwiii_latest_runs():
-        url = f"https://nomads.ncep.noaa.gov/dods/wave/mww3/{run_date}/multi_1.glo_30m.{run_hour}z"
+        tmpdir = tempfile.mkdtemp(prefix="prc_ww3_")
         try:
-            ds = xr.open_dataset(url, engine="netcdf4")
-            # WW3 variables: htsgwsfc (Hs), perpwsfc (peak period), dirpwsfc (peak dir)
-            avail_vars = [v for v in ["htsgwsfc", "perpwsfc", "dirpwsfc"] if v in ds]
-            if not avail_vars:
-                last_err = "No wave variables found in dataset"
-                ds.close()
-                continue
-
-            sub = ds[avail_vars].isel(time=slice(0, max_steps)).sel(
-                lat=slice(s, n),
-                lon=slice(w360, e360) if w360 < e360 else slice(0, 360))
-
-            lats = sub.lat.values.tolist()
-            lons = sub.lon.values.tolist()
-            import pandas as pd
-            base_time = pd.Timestamp(f"{run_date} {run_hour}:00", tz="UTC")
             times_ms = []
-            for t in sub.time.values:
+            import pandas as pd
+            base = pd.Timestamp(f"{run_date} {run_hour}:00", tz="UTC")
+
+            for fh in fhours:
+                fname = f"multi_1.glo_30m.t{run_hour}z.f{fh:03d}.grib2"
+                url = (f"https://nomads.ncep.noaa.gov/cgi-bin/filter_wave_multi.pl?"
+                       f"dir=/multi_1.{run_date}&file={fname}"
+                       f"&var_HTSGW=on&var_PERPW=on&var_DIRPW=on"
+                       f"&lev_surface=on"
+                       f"&subregion=&toplat={n}&leftlon={w360}&rightlon={e360}&bottomlat={s}")
+                dest = os.path.join(tmpdir, f"ww3_f{fh:03d}.grib2")
+                _download_grib(url, dest)
+                times_ms.append(int((base + pd.Timedelta(hours=fh)).timestamp() * 1000))
+                _time.sleep(0.5)
+
+            all_ds = []
+            for fh_idx, fh in enumerate(fhours):
+                dest = os.path.join(tmpdir, f"ww3_f{fh:03d}.grib2")
                 try:
-                    times_ms.append(int(pd.Timestamp(t).timestamp() * 1000))
+                    ds = xr.open_dataset(dest, engine="cfgrib",
+                        backend_kwargs={"indexpath": ""})
+                    all_ds.append((fh_idx, ds))
                 except:
-                    times_ms.append(int(base_time.timestamp() * 1000))
+                    continue
+
+            if not all_ds:
+                raise ValueError("No WW3 GRIB2 files decoded successfully")
+
+            sample = all_ds[0][1]
+            lats = sample.latitude.values.tolist()
+            lons = sample.longitude.values.tolist()
 
             out = []
-            for li, lat in enumerate(lats):
-                for loi, lon in enumerate(lons):
-                    pt = {"lat": round(lat, 3),
-                          "lon": round((lon - 360 if lon > 180 else lon), 3),
-                          "times": times_ms, "source": "noaa_wwiii"}
-                    if "htsgwsfc" in sub:
-                        pt["waveHeight"] = arr_clean(
-                            sub["htsgwsfc"].isel(lat=li, lon=loi).values.tolist())
-                    if "perpwsfc" in sub:
-                        pt["wavePeriod"] = arr_clean(
-                            sub["perpwsfc"].isel(lat=li, lon=loi).values.tolist())
-                    if "dirpwsfc" in sub:
-                        pt["waveDir"] = arr_clean(
-                            sub["dirpwsfc"].isel(lat=li, lon=loi).values.tolist(), 0)
-                    out.append(pt)
+            for lat in lats:
+                for lon in lons:
+                    hs_arr, tp_arr, dir_arr = [], [], []
+                    for fh_idx, ds in all_ds:
+                        try:
+                            hs = float(ds["swh"].sel(latitude=lat, longitude=lon, method="nearest").values)
+                            hs_arr.append(round(hs, 2) if math.isfinite(hs) else None)
+                        except:
+                            hs_arr.append(None)
+                        try:
+                            tp = float(ds["perpw"].sel(latitude=lat, longitude=lon, method="nearest").values)
+                            tp_arr.append(round(tp, 1) if math.isfinite(tp) else None)
+                        except:
+                            tp_arr.append(None)
+                        try:
+                            dr = float(ds["dirpw"].sel(latitude=lat, longitude=lon, method="nearest").values)
+                            dir_arr.append(round(dr, 0) if math.isfinite(dr) else None)
+                        except:
+                            dir_arr.append(None)
+                    disp_lon = lon - 360 if lon > 180 else lon
+                    out.append({
+                        "lat": round(lat, 3), "lon": round(disp_lon, 3),
+                        "times": times_ms, "source": "noaa_wwiii",
+                        "waveHeight": hs_arr, "wavePeriod": tp_arr, "waveDir": dir_arr,
+                    })
 
-            ds.close()
+            for _, ds in all_ds:
+                ds.close()
+            import shutil
+            shutil.rmtree(tmpdir, ignore_errors=True)
+
             return {"ok": True, "data": out,
                     "run": f"{run_date}/{run_hour}z",
                     "points": len(out), "steps": len(times_ms)}
         except Exception as exc:
             last_err = str(exc)
+            import shutil
+            shutil.rmtree(tmpdir, ignore_errors=True)
             continue
     return {"ok": False, "error": f"All WW3 runs failed: {last_err}"}
 
