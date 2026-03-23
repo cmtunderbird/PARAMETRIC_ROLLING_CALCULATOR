@@ -19,23 +19,7 @@ import { sanitizeWxSnapshot } from "./weatherValidation.js";
 import { fetchRouteWeather } from "./weather/routeWeatherPipeline.js";
 import FetchProgressBar from "./ui/route/FetchProgressBar.jsx";
 import { useAppState, useAppActions } from "./state/appStore.jsx";
-
-// ── Weather state persistence (survives tab switch + restart) ────────────────
-const WX_PERSIST_KEY = "prc_route_wx_state";
-function saveWxState(data) {
-  try { localStorage.setItem(WX_PERSIST_KEY, JSON.stringify({ ...data, savedAt: Date.now() })); }
-  catch { /* quota exceeded — fail silently */ }
-}
-function loadWxState() {
-  try {
-    const raw = localStorage.getItem(WX_PERSIST_KEY);
-    if (!raw) return null;
-    const data = JSON.parse(raw);
-    // Consider stale after 6 hours
-    if (Date.now() - data.savedAt > 6 * 3600000) return null;
-    return data;
-  } catch { return null; }
-}
+import { saveWxSession, loadWxSession } from "./services/wxSessionStore.js";
 import { calcCurrentPosition, ShipPositionLayer,
          ShipPolarDiagram, ShipInfoPanel } from "./ShipDashboard.jsx";
 // ── Extracted child components ──
@@ -189,18 +173,18 @@ export default function RouteChart({ shipParams }) {
     }
   }, [route, fileName, bospDT, voyageSpeed]);
 
-  // ── Restore weather state on mount (survives tab switch + restart) ──
+  // ── Restore weather state on mount (IndexedDB — survives tab switch + restart) ──
   useEffect(() => {
-    const saved = loadWxState();
-    if (saved) {
+    loadWxSession().then(saved => {
+      if (!saved) return;
       if (saved.marineGrid) setMarineGrid(saved.marineGrid);
       if (saved.atmoGrid) setAtmoGrid(saved.atmoGrid);
       if (saved.physicsGrid) setPhysicsGrid(saved.physicsGrid);
-      if (saved.voyageWeather) { setVoyageWeather(saved.voyageWeather); setShowPolar(true); }
+      if (saved.voyageWeather) setVoyageWeather(saved.voyageWeather);
       if (saved.voyageWPs) setVoyageWPs(saved.voyageWPs);
       if (saved.pipelineFamily) setPipelineFamily(saved.pipelineFamily);
       if (saved.chartHourIdx != null) setChartHourIdx(saved.chartHourIdx);
-    }
+    }).catch(() => {});
   }, []); // mount only
 
   // ── Dynamic polar context: hover point > scrubber position > live ship ──
@@ -210,7 +194,6 @@ export default function RouteChart({ shipParams }) {
   const [shipWx, setShipWx] = useState(null);
   const [shipMotion, setShipMotion] = useState(null);
   const [shipMStat, setShipMStat] = useState(null);
-  const [showPolar, setShowPolar] = useState(false);
 
   // ── Effects ──
   useEffect(() => {
@@ -320,8 +303,8 @@ export default function RouteChart({ shipParams }) {
       setPipelineFamily(result.modelFamily);
       setChartHourIdx(0); setPlaying(false); setCacheInfo(cacheStatus());
 
-      // ── Persist weather state (survives tab switch + restart) ──
-      saveWxState({
+      // ── Persist weather state to IndexedDB (survives tab switch + restart) ──
+      saveWxSession({
         marineGrid: result.marineGrid,
         atmoGrid: result.atmoGrid,
         physicsGrid: result.physicsGrid,
@@ -329,9 +312,7 @@ export default function RouteChart({ shipParams }) {
         voyageWPs: result.voyageWPs,
         pipelineFamily: result.modelFamily,
         chartHourIdx: 0,
-        showPolar: true,
       });
-      setShowPolar(true);
     } catch (e) {
       setGridError(e.message); setVwError(e.message);
     }
