@@ -1,0 +1,248 @@
+// ─── routeWeatherPipeline.js — Unified route weather fetch ──────────────────
+// Single-action pipeline: synoptic grid + voyage weather in one coordinated flow.
+// Ensures model coherence: if NOAA WW3 is used for marine, NOAA GFS is used for
+// wind (same model family). Never mixes Open-Meteo marine with NOAA wind.
+//
+// Progress callback reports through all stages:
+//   1. Calculate voyage ETAs
+//   2. Probe data sources (which are available?)
+//   3. Fetch marine grid (synoptic overlay)
+//   4. Fetch wind grid (same model family as marine)
+//   5. Fetch voyage weather (interpolate at each WP's ETA)
+//   6. Compute seakeeping motions along route
+
+import { buildGridPoints, fetchMarineGrid, fetchAtmosphericGrid,
+         fetchMarineUnified, fetchCmemsPhysicsGrid } from "../weatherApi.js";
+import { isNoaaGfsAvailable, fetchNoaaGfs,
+         fetchNoaaWaveWatch } from "./providers/noaaGfs.js";
+import { fetchOpenMeteo } from "./providers/openMeteo.js";
+import { cacheGet, cacheSet, cacheStatus, cacheInvalidate } from "../weatherCache.js";
+import { sanitizeWxSnapshot } from "../weatherValidation.js";
+import { closestHourIdx, calcVoyageETAs, cumulativeDistances } from "../core/voyageEngine.js";
+import { generateWeatherSamplePoints } from "../RouteParser.js";
+import { calcMotions, getMotionStatus } from "../physics.js";
+
+// ─── Model family coherence table ───────────────────────────────────────────
+// If marine comes from source X, wind MUST come from the corresponding source
+const MODEL_FAMILIES = {
+  noaa:     { marine: "noaa_wwiii", wind: "noaa_gfs",   label: "NOAA (WW3 + GFS)" },
+  openmeteo:{ marine: "openmeteo",  wind: "openmeteo",  label: "Open-Meteo (ICON + GFS Seamless)" },
+  cmems:    { marine: "cmems",      wind: "openmeteo",  label: "CMEMS (wave) + Open-Meteo (wind)" },
+};
+
+// ─── Probe available sources and select best coherent family ────────────────
+async function selectModelFamily(cmemsCredentials) {
+  // Priority: NOAA (free, hi-res, coherent) → CMEMS (if creds) → Open-Meteo (always available)
+  const bridgeUp = await isNoaaGfsAvailable().catch(() => false);
+  if (bridgeUp) return { ...MODEL_FAMILIES.noaa, bridgeUp: true };
+  if (cmemsCredentials?.user && cmemsCredentials?.pass)
+    return { ...MODEL_FAMILIES.cmems, bridgeUp: false };
+  return { ...MODEL_FAMILIES.openmeteo, bridgeUp: false };
+}
+
+// ─── Main unified pipeline ──────────────────────────────────────────────────
+/**
+ * Single-action route weather fetch. Call once, get everything.
+ *
+ * @param {Object} params
+ * @param {Array} params.waypoints — route waypoints [{lat, lon, ...}]
+ * @param {string} params.bospDT — BOSP datetime ISO string
+ * @param {number} params.voyageSpeed — planned speed in knots
+ * @param {Object} params.shipParams — {Lwl, B, GM, Tr, rollDamping, ...}
+ * @param {Object} params.mapBounds — {south, north, west, east} for synoptic grid
+ * @param {number} params.gridRes — synoptic grid resolution (degrees)
+ * @param {boolean} params.showAtmo — include wind overlay
+ * @param {boolean} params.showCurrents — include CMEMS currents
+ * @param {Object} params.cmemsCredentials — {user, pass} or null
+ * @param {string} params.cmemsProvider — "auto"|"cmems"|"openmeteo"
+ * @param {boolean} params.forceRefresh — bypass cache
+ * @param {function} params.onProgress — (stage, pct, detail) callback
+ * @returns {Promise<Object>} — { voyageWPs, voyageWeather, marineGrid, atmoGrid,
+ *                                 physicsGrid, modelFamily, log }
+ */
+export async function fetchRouteWeather({
+  waypoints, bospDT, voyageSpeed, shipParams,
+  mapBounds, gridRes = 2.0, showAtmo = true, showCurrents = false,
+  cmemsCredentials = null, cmemsProvider = "auto",
+  forceRefresh = false, onProgress = () => {},
+}) {
+  const log = [];
+  const t0 = Date.now();
+  let totalStages = 5; // ETA + probe + marine + wind + voyage
+  let completedStages = 0;
+  const progress = (stage, detail) => {
+    completedStages++;
+    const pct = Math.round((completedStages / totalStages) * 100);
+    onProgress(stage, pct, detail);
+    log.push({ stage, detail, elapsed: Date.now() - t0 });
+  };
+
+  // ═══ STAGE 1: Calculate voyage ETAs ═══
+  onProgress("Calculating voyage ETAs...", 5, "");
+  const bospMs = new Date(bospDT).getTime();
+  const voyageWPs = calcVoyageETAs(waypoints, bospMs, voyageSpeed);
+  progress("voyage_etas", `${voyageWPs.length} waypoints`);
+
+  // ═══ STAGE 2: Probe sources & select coherent model family ═══
+  onProgress("Probing data sources...", 10, "");
+  const family = await selectModelFamily(cmemsCredentials);
+  if (showCurrents && family.bridgeUp) totalStages++;
+  progress("source_probe", family.label);
+
+  // ═══ STAGE 3: Build synoptic grid ═══
+  let effectiveGridRes = gridRes;
+  let gridPts, gridBounds;
+  if (mapBounds) {
+    ({ points: gridPts, bounds: gridBounds } = buildGridPoints(mapBounds, effectiveGridRes));
+    while (gridPts.length > 80 && effectiveGridRes < 8.0) {
+      effectiveGridRes = parseFloat((effectiveGridRes + 0.5).toFixed(1));
+      ({ points: gridPts, bounds: gridBounds } = buildGridPoints(mapBounds, effectiveGridRes));
+    }
+    if (gridPts.length > 1500) throw new Error(`Grid too large (${gridPts.length} pts). Zoom in.`);
+  }
+  if (forceRefresh && gridBounds) {
+    cacheInvalidate("marine", gridBounds, effectiveGridRes);
+    cacheInvalidate("atmo", gridBounds, effectiveGridRes);
+  }
+
+  // ═══ STAGE 3: Fetch marine grid (synoptic overlay) ═══
+  let marineGrid = null;
+  if (gridPts && gridBounds) {
+    onProgress("Fetching marine data...", 20, `${family.label} — ${gridPts.length} grid points`);
+    try {
+      const creds = cmemsCredentials?.user ? cmemsCredentials : null;
+      const mResult = await fetchMarineUnified(gridPts, 7, gridBounds, effectiveGridRes,
+        cmemsProvider, creds);
+      marineGrid = { results: mResult.results, gridRes: effectiveGridRes,
+        bounds: gridBounds, provider: mResult.provider, fromCache: mResult.fromCache,
+        fetchedAt: mResult.fetchedAt };
+    } catch (e) {
+      log.push({ stage: "marine_grid", error: e.message });
+    }
+  }
+  progress("marine_grid", marineGrid ? `${marineGrid.results?.length} pts` : "skipped");
+
+  // ═══ STAGE 4: Fetch wind grid (SAME model family as marine) ═══
+  let atmoGrid = null;
+  if (showAtmo && gridPts && gridBounds) {
+    const windSource = marineGrid?.provider === "cmems" ? "openmeteo"
+      : marineGrid?.provider === "noaa_wwiii" || family.marine === "noaa_wwiii" ? "noaa_gfs"
+      : "openmeteo";
+    onProgress("Fetching wind data...", 40, `Source: ${windSource}`);
+    try {
+      if (windSource === "noaa_gfs" && family.bridgeUp) {
+        const gfsResult = await fetchNoaaGfs(gridBounds, 120);
+        atmoGrid = { results: gfsResult.results, gridRes: effectiveGridRes,
+          bounds: gridBounds, provider: "noaa_gfs" };
+      } else {
+        const aResult = await fetchAtmosphericGrid(gridPts, 7, gridBounds, effectiveGridRes);
+        atmoGrid = { results: aResult.results, gridRes: effectiveGridRes,
+          bounds: gridBounds, provider: aResult.provider || "openmeteo" };
+      }
+    } catch (e) {
+      log.push({ stage: "wind_grid", error: e.message });
+    }
+  }
+  progress("wind_grid", atmoGrid ? `${atmoGrid.results?.length} pts (${atmoGrid.provider})` : "skipped");
+
+  // ═══ STAGE 4b: CMEMS currents (optional) ═══
+  let physicsGrid = null;
+  if (showCurrents && cmemsCredentials?.user && gridBounds) {
+    onProgress("Fetching ocean currents...", 55, "CMEMS GLORYS");
+    try {
+      const phyResult = await fetchCmemsPhysicsGrid(
+        cmemsCredentials.user, cmemsCredentials.pass, gridPts, gridBounds, 0.083);
+      physicsGrid = { results: phyResult.results, gridRes: 0.083, bounds: gridBounds };
+      progress("currents", `${phyResult.results?.length} pts`);
+    } catch (e) {
+      log.push({ stage: "currents", error: e.message });
+    }
+  }
+
+  // ═══ STAGE 5: Voyage weather — interpolate at each WP's ETA ═══
+  onProgress("Computing voyage weather...", 65, `${voyageWPs.length} waypoints`);
+  let voyageWeather = null;
+  if (voyageWPs?.length && route_has_weather(marineGrid)) {
+    try {
+      const pts = generateWeatherSamplePoints(waypoints, 150);
+      const totalNM = voyageWPs[voyageWPs.length - 1].cumNM || 1;
+      const eospMs = bospMs + (totalNM / voyageSpeed) * 3600000;
+      const cumDists = cumulativeDistances(pts);
+      const totalPtNM = cumDists[cumDists.length - 1] || 1;
+      const ptsWithETA = pts.map((p, i) => ({
+        ...p, etaMs: bospMs + (cumDists[i] / totalPtNM) * (eospMs - bospMs),
+      }));
+
+      // De-duplicate sample points
+      const uniq = [], seen = new Set();
+      for (const p of ptsWithETA) {
+        const k = `${p.lat.toFixed(1)},${p.lon.toFixed(1)}`;
+        if (!seen.has(k)) { seen.add(k); uniq.push(p); }
+      }
+
+      // Use the SAME marine/atmo data already fetched for coherence
+      const mResults = marineGrid?.results ?? [];
+      const aResults = atmoGrid?.results ?? [];
+      const marineMap = new Map(mResults.map(r =>
+        [`${r.lat.toFixed(1)},${r.lon.toFixed(1)}`, r]));
+      const atmoMap = new Map(aResults.map(r =>
+        [`${r.lat.toFixed(1)},${r.lon.toFixed(1)}`, r]));
+
+      onProgress("Computing seakeeping motions...", 80, "");
+      voyageWeather = ptsWithETA.map(p => {
+        const key = `${p.lat.toFixed(1)},${p.lon.toFixed(1)}`;
+        const mr = marineMap.get(key);
+        const ar = atmoMap.get(key);
+        const mIdx = mr ? closestHourIdx(mr.times, p.etaMs) : 0;
+        const aIdx = ar ? closestHourIdx(ar.times, p.etaMs) : 0;
+        const weather = mr ? {
+          waveHeight: mr.waveHeight?.[mIdx], waveDir: mr.waveDir?.[mIdx],
+          wavePeriod: mr.wavePeriod?.[mIdx],
+          swellHeight: mr.swellHeight?.[mIdx], swellPeriod: mr.swellPeriod?.[mIdx],
+          swellDir: mr.swellDir?.[mIdx],
+          windKts: ar?.windKts?.[aIdx], windDir: ar?.windDir?.[aIdx],
+          mslp: ar?.mslp?.[aIdx],
+        } : null;
+        const safeWeather = weather ? sanitizeWxSnapshot(weather) : null;
+        const motions = safeWeather ? calcMotions({
+          waveHeight_m: safeWeather.waveHeight || 0,
+          wavePeriod_s: safeWeather.wavePeriod || 8,
+          waveDir_deg: safeWeather.waveDir || p.heading || 0,
+          swellHeight_m: safeWeather.swellHeight || 0,
+          swellPeriod_s: safeWeather.swellPeriod || 10,
+          swellDir_deg: safeWeather.swellDir || 0,
+          heading_deg: p.heading || 0, speed_kts: voyageSpeed,
+          Lwl: shipParams?.Lwl || 200, B: shipParams?.B || 32,
+          GM: shipParams?.GM || 2.5, Tr: shipParams?.Tr || 14,
+          rollDamping: shipParams?.rollDamping ?? 0.05,
+        }) : null;
+        const motionStatus = motions
+          ? getMotionStatus(motions, weather?.waveHeight || 0, weather?.windKts || 0) : null;
+        return { ...p, weather, motions, motionStatus,
+          riskSeverity: motionStatus?.severity ?? 0 };
+      });
+    } catch (e) {
+      log.push({ stage: "voyage_weather", error: e.message });
+    }
+  }
+  progress("voyage_weather", voyageWeather ? `${voyageWeather.length} pts` : "no marine data");
+
+  // ═══ DONE ═══
+  onProgress("Complete", 100, `${family.label} — ${((Date.now() - t0) / 1000).toFixed(1)}s`);
+
+  return {
+    voyageWPs,
+    voyageWeather,
+    marineGrid,
+    atmoGrid,
+    physicsGrid,
+    modelFamily: family,
+    log,
+    elapsed: Date.now() - t0,
+  };
+}
+
+// Helper: check if we have marine data to work with
+function route_has_weather(marineGrid) {
+  return marineGrid?.results?.length > 0;
+}

@@ -32,32 +32,17 @@ export default function SynopticOverlayPanel({
         <input type="checkbox" checked={showAtmo} onChange={e=>setShowAtmo(e.target.checked)} style={{accentColor:"#F59E0B"}}/>
         <span style={{color:"#94A3B8",fontSize:11}}>Isobars + Wind Barbs (atmospheric)</span>
       </label>
-      <button onClick={()=>fetchSeaOverlay(false)} disabled={anyLoading}
-        style={{...btnSt,width:"100%",background:anyLoading?"#334155":"linear-gradient(90deg,#22D3EE,#3B82F6)",color:"#0F172A"}}>
-        {gridLoading ? (gridProgress ? `${gridProgress.step}\u2026` : "STARTING\u2026") : "\ud83c\udf00 FETCH SYNOPTIC CHART"}
-      </button>
-      {gridLoading && gridProgress && (
-        <div style={{marginTop:4}}>
-          <div style={{display:"flex",justifyContent:"space-between",fontSize:9,color:"#64748B",marginBottom:2,fontFamily:"'JetBrains Mono',monospace"}}>
-            <span>{gridProgress.step}</span><span>{gridProgress.done}/{gridProgress.total} batches</span>
-          </div>
-          <div style={{background:"#0F172A",borderRadius:3,height:5,border:"1px solid #334155"}}>
-            <div style={{height:"100%",borderRadius:3,transition:"width 0.3s",background:"linear-gradient(90deg,#22D3EE,#3B82F6)",
-              width:`${gridProgress.total>0?(gridProgress.done/gridProgress.total)*100:0}%`}}/>
-          </div>
-        </div>
-      )}
-      <button onClick={()=>fetchSeaOverlay(true)} disabled={anyLoading}
-        style={{...btnSt,width:"100%",marginTop:4,background:anyLoading?"#1E293B":"#1E293B",
-          color:"#EF4444",border:"1px solid #EF444440",fontSize:10}}>
-        {"\ud83d\udd04"} FORCE REFRESH (bypass cache)</button>
+      <div style={{color:"#475569",fontSize:9,padding:"6px 8px",background:"#0F172A80",borderRadius:3,marginBottom:6,lineHeight:1.5,border:"1px solid #33415550"}}>
+        ℹ Use <b style={{color:"#F59E0B"}}>FETCH ROUTE WEATHER</b> in the left panel — fetches synoptic grid + voyage weather in one coherent action.
+      </div>
       {gridError&&<div style={{color:"#EF4444",fontSize:10,marginTop:6}}>{gridError}</div>}
       {marineGrid&&<div style={{color:"#64748B",fontSize:9,marginTop:4}}>
         {marineGrid.results.length} pts {"\u00b7"} {maxHourIdx}h forecast &nbsp;{"\u00b7"}&nbsp;
         <span style={{color:lastFetchSrc==="cache"?"#22D3EE":"#16A34A"}}>
           {lastFetchSrc==="cache"?"\ud83d\udce6 cached":"\ud83c\udf10 fetched live"}</span> &nbsp;{"\u00b7"}&nbsp;
         <span style={{color:"#A78BFA"}}>
-          {marineGrid.results[0]?.source==="cmems"?"\ud83d\udef0 CMEMS 0.083\u00b0":"\ud83d\udce1 Open-Meteo 0.25\u00b0"}</span>
+          {marineGrid.provider==="noaa_wwiii"?"\ud83d\udce1 NOAA WW3 0.5\u00b0"
+            :marineGrid.results[0]?.source==="cmems"?"\ud83d\udef0 CMEMS 0.083\u00b0":"\ud83d\udce1 Open-Meteo 0.25\u00b0"}</span>
       </div>}
       {cacheInfo.length > 0 && (
         <div style={{marginTop:8,padding:6,background:"#0F172A",borderRadius:4,border:"1px solid #334155"}}>

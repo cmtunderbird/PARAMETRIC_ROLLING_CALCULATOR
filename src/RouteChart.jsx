@@ -16,6 +16,8 @@ import { cacheStatus, cacheInvalidate } from "./weatherCache.js";
 import { loadCmemsCredentials } from "./cmemsProvider.js";
 import { calcMotions, getMotionStatus } from "./physics.js";
 import { sanitizeWxSnapshot } from "./weatherValidation.js";
+import { fetchRouteWeather } from "./weather/routeWeatherPipeline.js";
+import FetchProgressBar from "./ui/route/FetchProgressBar.jsx";
 import { calcCurrentPosition, ShipPositionLayer,
          ShipPolarDiagram, ShipInfoPanel } from "./ShipDashboard.jsx";
 // ── Extracted child components ──
@@ -145,6 +147,11 @@ export default function RouteChart({ shipParams }) {
   const playRef = useRef(null);
   const mapRef = useRef(null);
   const fileRef = useRef(null);
+
+  // ── Unified pipeline state (Phase 3) ──
+  const [pipelineRunning, setPipelineRunning] = useState(false);
+  const [pipelineProgress, setPipelineProgress] = useState({ stage: null, pct: 0, detail: "" });
+  const [pipelineFamily, setPipelineFamily] = useState(null);
   const anyLoading = vwLoading||gridLoading;
   const [shipPos, setShipPos] = useState(null);
   const [shipWx, setShipWx] = useState(null);
@@ -227,7 +234,45 @@ export default function RouteChart({ shipParams }) {
   const wpMoveUp = (idx) => { if(idx<1) return; const w=[...route.waypoints]; [w[idx-1],w[idx]]=[w[idx],w[idx-1]]; mutateWps(w); };
   const wpMoveDown = (idx) => { if(idx>=route.waypoints.length-1) return; const w=[...route.waypoints]; [w[idx],w[idx+1]]=[w[idx+1],w[idx]]; mutateWps(w); };
 
-  // ── Voyage calc ──
+  // ── UNIFIED FETCH: single-action route weather pipeline ──────────────────
+  const fetchAllRouteWeather = async (forceRefresh = false) => {
+    if (!route?.waypoints?.length) return;
+    setPipelineRunning(true);
+    setPipelineProgress({ stage: "Initializing...", pct: 0, detail: "" });
+    setVwError(null); setGridError(null);
+    try {
+      const map = mapRef.current;
+      const b = map?.getBounds();
+      const mapBounds = b ? { south: b.getSouth(), north: b.getNorth(),
+        west: b.getWest(), east: b.getEast() } : null;
+      const creds = (cmemsUser && cmemsPass) ? { user: cmemsUser, pass: cmemsPass } : null;
+      const result = await fetchRouteWeather({
+        waypoints: route.waypoints, bospDT, voyageSpeed, shipParams,
+        mapBounds, gridRes, showAtmo, showCurrents: !!creds,
+        cmemsCredentials: creds, cmemsProvider,
+        forceRefresh,
+        onProgress: (stage, pct, detail) =>
+          setPipelineProgress({ stage, pct, detail }),
+      });
+      // Apply results to state
+      if (result.voyageWPs) setVoyageWPs(result.voyageWPs);
+      if (result.voyageWeather) setVoyageWeather(result.voyageWeather);
+      if (result.marineGrid) {
+        setMarineGrid(result.marineGrid);
+        setLastFetchSrc(result.marineGrid.fromCache ? "cache" : "network");
+        setGridFetchedAt(result.marineGrid.fetchedAt);
+      }
+      if (result.atmoGrid) setAtmoGrid(result.atmoGrid);
+      if (result.physicsGrid) setPhysicsGrid(result.physicsGrid);
+      setPipelineFamily(result.modelFamily);
+      setChartHourIdx(0); setPlaying(false); setCacheInfo(cacheStatus());
+    } catch (e) {
+      setGridError(e.message); setVwError(e.message);
+    }
+    setPipelineRunning(false);
+  };
+
+  // ── Voyage calc (kept for manual ETA recalc without refetching weather) ──
   const calcVoyage = () => {
     if (!route?.waypoints) return;
     setVoyageWPs(calcVoyageETAs(route.waypoints, new Date(bospDT).getTime(), voyageSpeed));
@@ -368,17 +413,28 @@ export default function RouteChart({ shipParams }) {
           )}
         </Panel>}
 
-        {/* Voyage Weather Fetch */}
+        {/* ── Unified Route Weather Fetch (single action) ── */}
         {voyageWPs && <Panel>
-          {SH("🌊 Fetch Voyage Weather")}
+          {SH("🌊 Fetch Route Weather")}
           <div style={{color:"#94A3B8",fontSize:10,lineHeight:1.5,marginBottom:8}}>
-            Fetches 7-day forecasts and picks the correct hour at each waypoint's ETA time.
-            Runs full seakeeping assessment at every sample point.</div>
-          <button onClick={fetchVoyageWeather} disabled={anyLoading}
-            style={{...btnSt,width:"100%",background:anyLoading?"#334155":"linear-gradient(90deg,#F59E0B,#D97706)",color:"#0F172A"}}>
-            {vwLoading?"FETCHING...":"⟳ FETCH TIME-AWARE WEATHER"}</button>
-          {vwError&&<div style={{color:"#EF4444",fontSize:10,marginTop:6}}>{vwError}</div>}
-          {voyageWeather&&<div style={{color:"#64748B",fontSize:9,marginTop:4}}>
+            Single action: synoptic grid + voyage weather + seakeeping motions.
+            Uses coherent model family (same source for marine &amp; wind).
+          </div>
+          {pipelineFamily && !pipelineRunning && <div style={{color:"#64748B",fontSize:9,marginBottom:6}}>
+            Last fetch: <b style={{color:"#22C55E"}}>{pipelineFamily.label}</b>
+          </div>}
+          <FetchProgressBar stage={pipelineProgress.stage} pct={pipelineProgress.pct}
+            detail={pipelineProgress.detail} modelFamily={pipelineFamily} />
+          <div style={{display:"flex",gap:6}}>
+            <button onClick={() => fetchAllRouteWeather(false)} disabled={pipelineRunning}
+              style={{...btnSt,flex:1,background:pipelineRunning?"#334155":"linear-gradient(90deg,#F59E0B,#D97706)",color:"#0F172A",fontWeight:800}}>
+              {pipelineRunning ? "⟳ FETCHING..." : "⟳ FETCH ROUTE WEATHER"}</button>
+            <button onClick={() => fetchAllRouteWeather(true)} disabled={pipelineRunning}
+              style={{...btnSt,background:"#33415580",color:"#94A3B8",padding:"6px 10px",fontSize:9}}
+              title="Force refresh — bypass cache">🔄</button>
+          </div>
+          {(vwError||gridError)&&<div style={{color:"#EF4444",fontSize:10,marginTop:6,padding:6,background:"#7F1D1D20",borderRadius:4}}>{vwError||gridError}</div>}
+          {voyageWeather&&!pipelineRunning&&<div style={{color:"#64748B",fontSize:9,marginTop:4}}>
             {voyageWeather.length} points assessed · Max risk: <span style={{color:riskColor(maxRisk),fontWeight:800}}>{["MIN","LOW","MOD","ELEV","HIGH","CRIT","FORB"][maxRisk]}</span>
           </div>}
         </Panel>}
