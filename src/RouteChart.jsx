@@ -196,7 +196,7 @@ export default function RouteChart({ shipParams }) {
       if (saved.marineGrid) setMarineGrid(saved.marineGrid);
       if (saved.atmoGrid) setAtmoGrid(saved.atmoGrid);
       if (saved.physicsGrid) setPhysicsGrid(saved.physicsGrid);
-      if (saved.voyageWeather) setVoyageWeather(saved.voyageWeather);
+      if (saved.voyageWeather) { setVoyageWeather(saved.voyageWeather); setShowPolar(true); }
       if (saved.voyageWPs) setVoyageWPs(saved.voyageWPs);
       if (saved.pipelineFamily) setPipelineFamily(saved.pipelineFamily);
       if (saved.chartHourIdx != null) setChartHourIdx(saved.chartHourIdx);
@@ -329,7 +329,9 @@ export default function RouteChart({ shipParams }) {
         voyageWPs: result.voyageWPs,
         pipelineFamily: result.modelFamily,
         chartHourIdx: 0,
+        showPolar: true,
       });
+      setShowPolar(true);
     } catch (e) {
       setGridError(e.message); setVwError(e.message);
     }
@@ -432,11 +434,11 @@ export default function RouteChart({ shipParams }) {
           voyageSpeed={voyageSpeed} setVoyageSpeed={setVoyageSpeed}
           calcVoyage={calcVoyage} voyageWPs={voyageWPs} eospStr={eospStr} voyageDaysStr={voyageDaysStr} />
 
-        {/* Live Ship Position */}
+        {/* Live Ship Position + Polar toggle */}
         {voyageWPs && <Panel>
-          {SH("⛵ Live Ship Position")}
+          {SH("⛵ Ship Position")}
           <ShipInfoPanel pos={shipPos} weather={shipWx} shipParams={shipParams} motions={shipMotion} motionStatus={shipMStat} />
-          {shipPos?.status === "underway" && voyageWeather?.length > 0 && (
+          {voyageWeather?.length > 0 && (
             <button onClick={() => setShowPolar(p => !p)}
               style={{...btnSt,width:"100%",marginTop:10,
                 background:showPolar?"linear-gradient(90deg,#7C3AED,#6D28D9)":"linear-gradient(90deg,#334155,#475569)",color:"#E2E8F0"}}>
@@ -580,15 +582,24 @@ export default function RouteChart({ shipParams }) {
           </MapContainer>
         </div>
 
-        {/* Polar Diagram — driven by scrubber when chart loaded, else real-time */}
-        {showPolar && (() => {
+        {/* Polar Diagram — driven by scrubber, or first WP when no live position */}
+        {showPolar && voyageWeather?.length > 0 && (() => {
           // Compute scrubber-driven position when synoptic chart is loaded
           const firstResult = marineGrid?.results?.find(r => r.times?.length > 0);
           const baseMs = firstResult ? (firstResult.times[0] < 1e12 ? firstResult.times[0] * 1000 : firstResult.times[0]) : null;
           const chartTimeMs = baseMs ? baseMs + chartHourIdx * 3600000 : null;
-          const polarPos = (chartTimeMs && voyageWPs?.length)
+          let polarPos = (chartTimeMs && voyageWPs?.length)
             ? calcCurrentPosition(voyageWPs, chartTimeMs) : shipPos;
-          if (!polarPos || polarPos.status !== "underway") return null;
+
+          // Fall back: if no underway position, use first voyage weather point
+          if (!polarPos || polarPos.status !== "underway") {
+            const firstPt = voyageWeather[0];
+            const hdg = voyageWeather.length > 1
+              ? ((Math.atan2(voyageWeather[1].lon - firstPt.lon, voyageWeather[1].lat - firstPt.lat) * 180 / Math.PI) + 360) % 360
+              : 270;
+            polarPos = { status: "underway", lat: firstPt.lat, lon: firstPt.lon,
+              heading: hdg, cog: hdg, cumNM: 0, elapsed_h: 0 };
+          }
 
           // Find nearest voyage weather point to polar position
           const nearestVW = voyageWeather?.length
