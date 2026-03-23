@@ -592,9 +592,9 @@ export default function RouteChart({ shipParams }) {
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
               <div>
                 <div style={{color:"#A78BFA",fontSize:12,fontWeight:800,letterSpacing:"0.12em",textTransform:"uppercase",fontFamily:"'JetBrains Mono',monospace"}}>
-                  🎯 Synoptic Polar Risk Diagram — Parametric Rolling</div>
+                  🎯 Synoptic Polar Risk Diagram — Parametric &amp; Synchronous Rolling</div>
                 <div style={{color:"#64748B",fontSize:10,marginTop:3}}>
-                  Thermal heatmap: risk intensity across all headings × speeds &nbsp;|&nbsp;
+                  Thermal heatmap: combined parametric (Tr≈2Te) + synchronous (Tr≈Te) risk &nbsp;|&nbsp;
                   Tw = {polarWx?.wavePeriod?.toFixed(1)||"—"}s &nbsp;·&nbsp;
                   Hs = {polarWx?.waveHeight?.toFixed(1)||"—"}m &nbsp;·&nbsp;
                   Tᵣ = {(shipParams?.Tr||14).toFixed(1)}s</div>

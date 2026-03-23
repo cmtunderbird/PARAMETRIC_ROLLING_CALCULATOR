@@ -10,6 +10,7 @@ import { useEffect, useRef } from "react";
 import { useMap } from "react-leaflet";
 import L from "leaflet";
 import { G, DEG_TO_RAD, calcEncounterPeriod, calcParametricRollRisk,
+         calcSynchronousRiskRatio,
          calcWaveLength, calcMotions, getMotionStatus } from "./physics.js";
 
 // ─── Haversine bearing ────────────────────────────────────────────────────────
@@ -197,13 +198,19 @@ export function ShipPolarDiagram({ pos, weather, shipParams }) {
   const hdg      = pos?.heading ?? 0;
   const cog      = pos?.cog     ?? hdg;
 
-  // ── Build wedge sectors ──
+  // ── Build wedge sectors (combined parametric + synchronous risk) ──
   const sectors = [];
   for (const { inner, outer, speed } of RINGS) {
     for (const absHdg of HDGS) {
       const relAngle = ((waveDir - absHdg) + 360) % 360;
       const Te   = calcEncounterPeriod(weather?.wavePeriod || 8, speed, relAngle);
-      const risk = calcParametricRollRisk(waveLen, Te, Tr, relAngle, Lwl);
+      const paramRisk = calcParametricRollRisk(waveLen, Te, Tr, relAngle, Lwl);
+      // Synchronous risk: Tr ≈ Te (direct resonance)
+      const syncRatio = Te > 0 && Tr > 0 ? Tr / Te : 0;
+      const syncDev = Math.abs(syncRatio - 1);
+      const syncRisk = Math.max(0, 1 - syncDev * 2.5); // narrower peak than parametric
+      // Combined: take the max — both are dangerous
+      const risk = Math.max(paramRisk, syncRisk);
       const [r,g,b] = riskThermal(risk);
       // SVG arc path for this wedge
       const startDeg = absHdg - 2.5;
@@ -259,25 +266,39 @@ export function ShipPolarDiagram({ pos, weather, shipParams }) {
     {deg:180,lbl:"S"},{deg:225,lbl:"SW"},{deg:270,lbl:"W"},{deg:315,lbl:"NW"},
   ];
 
-  // ── Danger arc: where Tr ≈ 2Te (overlay red arc segments) ──
+  // ── Danger arcs: parametric (Tr ≈ 2Te) + synchronous (Tr ≈ Te) ──
   const dangerArcs = [];
   for (const { inner, outer, speed } of RINGS) {
-    const arcPts = [];
+    const paramPts = [];
+    const syncPts = [];
     for (let a = 0; a < 360; a += 2) {
       const relAngle = ((waveDir - a) + 360) % 360;
       const Te = calcEncounterPeriod(weather?.wavePeriod || 8, speed, relAngle);
-      const ratio = Te > 0 ? Tr / (2 * Te) : 0;
-      if (Math.abs(ratio - 1) < 0.08) {
-        const ang = a * DEG_TO_RAD - Math.PI / 2;
-        const r = (inner + outer) / 2;
-        arcPts.push(`${CX + r * Math.cos(ang)},${CY + r * Math.sin(ang)}`);
+      const ang = a * DEG_TO_RAD - Math.PI / 2;
+      const r = (inner + outer) / 2;
+      // Parametric: Tr ≈ 2Te
+      const paramRatio = Te > 0 ? Tr / (2 * Te) : 0;
+      if (Math.abs(paramRatio - 1) < 0.08) {
+        paramPts.push(`${CX + r * Math.cos(ang)},${CY + r * Math.sin(ang)}`);
+      }
+      // Synchronous: Tr ≈ Te
+      const syncRatio = Te > 0 ? Tr / Te : 0;
+      if (Math.abs(syncRatio - 1) < 0.08) {
+        syncPts.push(`${CX + r * Math.cos(ang)},${CY + r * Math.sin(ang)}`);
       }
     }
-    if (arcPts.length > 3) {
+    if (paramPts.length > 3) {
       dangerArcs.push(
-        <polyline key={`danger-${speed}`}
-          points={arcPts.join(" ")} fill="none"
+        <polyline key={`param-${speed}`}
+          points={paramPts.join(" ")} fill="none"
           stroke="#FF0040" strokeWidth="1.5" strokeLinecap="round" opacity="0.7"/>
+      );
+    }
+    if (syncPts.length > 3) {
+      dangerArcs.push(
+        <polyline key={`sync-${speed}`}
+          points={syncPts.join(" ")} fill="none"
+          stroke="#FF8C00" strokeWidth="1.5" strokeLinecap="round" strokeDasharray="4,3" opacity="0.7"/>
       );
     }
   }
@@ -334,7 +355,7 @@ export function ShipPolarDiagram({ pos, weather, shipParams }) {
 
         {/* ── Centre ── */}
         <circle cx={CX} cy={CY} r={14} fill="#0F172A" stroke="#334155" strokeWidth="1"/>
-        <text x={CX} y={CY-3}   textAnchor="middle" style={{fontSize:6,fill:"#94A3B8",fontFamily:"'JetBrains Mono',monospace"}}>PARAM</text>
+        <text x={CX} y={CY-3}   textAnchor="middle" style={{fontSize:6,fill:"#94A3B8",fontFamily:"'JetBrains Mono',monospace"}}>ROLL</text>
         <text x={CX} y={CY+4}   textAnchor="middle" style={{fontSize:6,fill:"#94A3B8",fontFamily:"'JetBrains Mono',monospace"}}>RISK</text>
       </svg>
 
@@ -354,7 +375,8 @@ export function ShipPolarDiagram({ pos, weather, shipParams }) {
           {color:"#EF4444",dash:"",label:"WAV (Wave direction FROM)"},
           {color:"#F59E0B",dash:"6,3",label:"SWL (Swell direction FROM)"},
           {color:"#E2E8F0",dash:"3,3",label:"WND (Wind direction FROM)"},
-          {color:"#FF0040",dash:"",label:"─── Resonance (Tr≈2Te)"},
+          {color:"#FF0040",dash:"",label:"─── Parametric (Tr≈2Te)"},
+          {color:"#FF8C00",dash:"4,3",label:"--- Synchronous (Tr≈Te)"},
         ].map(({color,label})=>(
           <div key={label} style={{display:"flex",alignItems:"center",gap:4}}>
             <div style={{width:16,height:3,background:color,borderRadius:2}}/>
