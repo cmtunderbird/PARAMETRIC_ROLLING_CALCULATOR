@@ -31,9 +31,25 @@ const MODEL_FAMILIES = {
 };
 
 // ─── Probe available sources and select best coherent family ────────────────
-async function selectModelFamily(cmemsCredentials) {
-  // Priority: NOAA (free, hi-res, coherent) → CMEMS (if creds) → Open-Meteo (always available)
+async function selectModelFamily(cmemsCredentials, providerPref = "auto") {
   const bridgeUp = await isNoaaGfsAvailable().catch(() => false);
+
+  // Explicit NOAA selection
+  if (providerPref === "noaa") {
+    if (bridgeUp) return { ...MODEL_FAMILIES.noaa, bridgeUp: true };
+    // Bridge not available — fall back with warning
+    return { ...MODEL_FAMILIES.openmeteo, bridgeUp: false,
+      warning: "NOAA selected but Express bridge offline — using Open-Meteo" };
+  }
+  // Explicit CMEMS selection
+  if (providerPref === "cmems" && cmemsCredentials?.user && cmemsCredentials?.pass) {
+    return { ...MODEL_FAMILIES.cmems, bridgeUp };
+  }
+  // Explicit Open-Meteo selection
+  if (providerPref === "openmeteo") {
+    return { ...MODEL_FAMILIES.openmeteo, bridgeUp };
+  }
+  // Auto: NOAA (free, hi-res, coherent) → CMEMS (if creds) → Open-Meteo
   if (bridgeUp) return { ...MODEL_FAMILIES.noaa, bridgeUp: true };
   if (cmemsCredentials?.user && cmemsCredentials?.pass)
     return { ...MODEL_FAMILIES.cmems, bridgeUp: false };
@@ -54,7 +70,7 @@ async function selectModelFamily(cmemsCredentials) {
  * @param {boolean} params.showAtmo — include wind overlay
  * @param {boolean} params.showCurrents — include CMEMS currents
  * @param {Object} params.cmemsCredentials — {user, pass} or null
- * @param {string} params.cmemsProvider — "auto"|"cmems"|"openmeteo"
+ * @param {string} params.cmemsProvider — "auto"|"noaa"|"cmems"|"openmeteo"
  * @param {boolean} params.forceRefresh — bypass cache
  * @param {function} params.onProgress — (stage, pct, detail) callback
  * @returns {Promise<Object>} — { voyageWPs, voyageWeather, marineGrid, atmoGrid,
@@ -85,7 +101,7 @@ export async function fetchRouteWeather({
 
   // ═══ STAGE 2: Probe sources & select coherent model family ═══
   onProgress("Probing data sources...", 10, "");
-  const family = await selectModelFamily(cmemsCredentials);
+  const family = await selectModelFamily(cmemsCredentials, cmemsProvider);
   if (showCurrents && family.bridgeUp) totalStages++;
   progress("source_probe", family.label);
 

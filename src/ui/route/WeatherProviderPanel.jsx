@@ -14,11 +14,12 @@ export default function WeatherProviderPanel({
   return (
     <Panel>
       {SH("\ud83d\udef0 Weather Provider")}
-      <div style={{display:"flex",gap:4,marginBottom:10}}>
+      <div style={{display:"flex",gap:4,marginBottom:10,flexWrap:"wrap"}}>
         {[
-          {key:"openmeteo", label:"Open-Meteo", desc:"Free \u00b7 GFS/ECMWF \u00b7 0.25\u00b0"},
-          {key:"auto",      label:"Auto",        desc:"CMEMS if creds, else OM"},
+          {key:"auto",      label:"Auto",        desc:"Best available source"},
+          {key:"noaa",      label:"NOAA",         desc:"WW3 + GFS \u00b7 0.25\u00b0"},
           {key:"cmems",     label:"CMEMS",        desc:"0.083\u00b0 \u00b7 same as windmar"},
+          {key:"openmeteo", label:"Open-Meteo",   desc:"Free \u00b7 GFS/ECMWF \u00b7 0.25\u00b0"},
         ].map(({key,label,desc})=>(
           <button key={key} onClick={()=>setCmemsProvider(key)}
             style={{...btnSt,flex:1,padding:"5px 4px",fontSize:9,
@@ -33,7 +34,15 @@ export default function WeatherProviderPanel({
       </div>
       <div style={{padding:"5px 8px",background:"#0F172A",borderRadius:4,border:"1px solid #334155",marginBottom:8,fontSize:9,fontFamily:"'JetBrains Mono',monospace",lineHeight:1.7}}>
         <div style={{color:"#A78BFA",fontWeight:700,marginBottom:3}}>Active datasets</div>
-        {(cmemsProvider==="cmems"||(cmemsProvider==="auto"&&cmemsCredentials)) ? <>
+        {cmemsProvider==="noaa" ? <>
+          <div><span style={{color:"#64748B"}}>Waves:</span> <span style={{color:"#22C55E"}}>NOAA WaveWatch III 0.5{"\u00b0"} (GRIB filter)</span></div>
+          <div><span style={{color:"#64748B"}}>Wind:</span> <span style={{color:"#22C55E"}}>NOAA GFS 0.25{"\u00b0"} (GRIB filter)</span></div>
+          <div><span style={{color:"#64748B"}}>MSLP:</span> <span style={{color:"#22C55E"}}>NOAA GFS 0.25{"\u00b0"}</span></div>
+          <div><span style={{color:"#64748B"}}>Currents:</span> <span style={{color:"#94A3B8"}}>CMEMS GLORYS (if creds)</span></div>
+        </> : cmemsProvider==="auto" ? <>
+          <div><span style={{color:"#64748B"}}>Priority:</span> <span style={{color:"#22C55E"}}>NOAA</span> {"\u2192"} <span style={{color:"#A855F7"}}>CMEMS</span> {"\u2192"} <span style={{color:"#3B82F6"}}>Open-Meteo</span></div>
+          <div><span style={{color:"#64748B"}}>Selects:</span> <span style={{color:"#94A3B8"}}>Best available with model coherence</span></div>
+        </> : (cmemsProvider==="cmems"||(cmemsProvider==="auto"&&cmemsCredentials)) ? <>
           <div><span style={{color:"#64748B"}}>Waves:</span> <span style={{color:"#22D3EE"}}>{CMEMS_WAVE_DATASET}</span></div>
           <div><span style={{color:"#64748B"}}>Physics:</span> <span style={{color:"#22D3EE"}}>{CMEMS_PHYSICS_DATASET}</span></div>
           <div><span style={{color:"#64748B"}}>Wind:</span> <span style={{color:"#94A3B8"}}>GFS via Open-Meteo (always)</span></div>
