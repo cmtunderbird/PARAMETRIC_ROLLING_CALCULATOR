@@ -288,17 +288,33 @@ export function ShipPolarDiagram({ pos, weather, shipParams }) {
       }
     }
     if (paramPts.length > 3) {
+      const pts = paramPts.join(" ");
+      // Black contour (thicker, behind)
+      dangerArcs.push(
+        <polyline key={`param-bg-${speed}`}
+          points={pts} fill="none"
+          stroke="#000" strokeWidth="4" strokeLinecap="round" opacity="0.6"/>
+      );
+      // Solid red parametric arc
       dangerArcs.push(
         <polyline key={`param-${speed}`}
-          points={paramPts.join(" ")} fill="none"
-          stroke="#FF0040" strokeWidth="1.5" strokeLinecap="round" opacity="0.7"/>
+          points={pts} fill="none"
+          stroke="#FF0040" strokeWidth="2" strokeLinecap="round" opacity="0.85"/>
       );
     }
     if (syncPts.length > 3) {
+      const pts = syncPts.join(" ");
+      // Black contour (thicker, behind)
+      dangerArcs.push(
+        <polyline key={`sync-bg-${speed}`}
+          points={pts} fill="none"
+          stroke="#000" strokeWidth="4" strokeLinecap="round" opacity="0.6"/>
+      );
+      // Dashed orange synchronous arc
       dangerArcs.push(
         <polyline key={`sync-${speed}`}
-          points={syncPts.join(" ")} fill="none"
-          stroke="#FF8C00" strokeWidth="1.5" strokeLinecap="round" strokeDasharray="4,3" opacity="0.7"/>
+          points={pts} fill="none"
+          stroke="#FF8C00" strokeWidth="2" strokeLinecap="round" strokeDasharray="5,3" opacity="0.85"/>
       );
     }
   }
