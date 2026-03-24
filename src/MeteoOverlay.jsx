@@ -235,9 +235,26 @@ function renderAtmoLayer(canvas, cols, rows, cw, ch, atmoResults, bounds, gridRe
     }
   }
   fillNulls(pGrid, mRows, mCols);
-  console.log("[renderAtmoLayer]", { mRows, mCols, windPtsCount: windPts.length,
-    pGridSample: pGrid[Math.floor(mRows/2)]?.[Math.floor(mCols/2)],
-    canvasSize: `${cw}x${ch}`, boundsUsed: bounds });
+
+  // Count non-null pressure values and check data quality
+  let pCount = 0, pMin = Infinity, pMax = -Infinity;
+  for (let r = 0; r < mRows; r++) for (let c = 0; c < mCols; c++) {
+    if (pGrid[r][c] != null) { pCount++; pMin = Math.min(pMin, pGrid[r][c]); pMax = Math.max(pMax, pGrid[r][c]); }
+  }
+
+  // ── ON-CANVAS DIAGNOSTIC — visible on the map ──
+  ctx.save();
+  ctx.font = "bold 11px monospace";
+  ctx.textAlign = "left";
+  ctx.textBaseline = "top";
+  const diagY = 6;
+  ctx.fillStyle = "rgba(0,0,0,0.75)";
+  ctx.fillRect(4, diagY, 360, 48);
+  ctx.fillStyle = "#22D3EE";
+  ctx.fillText(`ATMO: ${atmoResults.length} pts | wind: ${windPts.length} barbs`, 8, diagY + 4);
+  ctx.fillText(`PRES: ${pCount}/${mRows*mCols} cells | ${pMin.toFixed(0)}-${pMax.toFixed(0)} hPa`, 8, diagY + 18);
+  ctx.fillText(`grid: ${mRows}x${mCols} @ ${gridRes}° | canvas: ${cw}x${ch}px`, 8, diagY + 32);
+  ctx.restore();
 
   // Isobars every 4 hPa (960–1044)
   const pLevels = [];
