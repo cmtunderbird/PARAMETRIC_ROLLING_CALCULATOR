@@ -175,61 +175,99 @@ def handle_noaa_gfs(cmd):
                 times_ms.append(int((base + pd.Timedelta(hours=fh)).timestamp() * 1000))
                 _time.sleep(0.5)  # NOMADS rate limit
 
-            # Decode all GRIB2 files
+            # Decode all GRIB2 files — open TWICE per file:
+            # once for 10m wind (heightAboveGround), once for MSLP (meanSea)
+            # cfgrib can't mix level types in a single open_dataset call.
             for fh_idx, fh in enumerate(fhours):
                 dest = os.path.join(tmpdir, f"gfs_f{fh:03d}.grib2")
-                try:
-                    ds = xr.open_dataset(dest, engine="cfgrib",
-                        backend_kwargs={"indexpath": ""})
-                    all_ds.append((fh_idx, ds))
-                except Exception as ex:
-                    continue
+                wind_ds, pres_ds = None, None
+                # Try opening with filter_by_keys for wind (10m above ground)
+                for wind_keys in [
+                    {"typeOfLevel": "heightAboveGround", "level": 10},
+                    {"typeOfLevel": "heightAboveGround"},
+                    {},  # fallback: no filter
+                ]:
+                    try:
+                        wind_ds = xr.open_dataset(dest, engine="cfgrib",
+                            backend_kwargs={"indexpath": "", "filter_by_keys": wind_keys})
+                        if any(v in wind_ds for v in ["u10","v10","10u","10v","u","v"]):
+                            break
+                        wind_ds.close(); wind_ds = None
+                    except:
+                        wind_ds = None
+                # Try opening with filter_by_keys for MSLP
+                for pres_keys in [
+                    {"typeOfLevel": "meanSea"},
+                    {"typeOfLevel": "heightAboveSea"},
+                    {},
+                ]:
+                    try:
+                        pres_ds = xr.open_dataset(dest, engine="cfgrib",
+                            backend_kwargs={"indexpath": "", "filter_by_keys": pres_keys})
+                        if any(v in pres_ds for v in ["prmsl","msl","mslet","sp"]):
+                            break
+                        pres_ds.close(); pres_ds = None
+                    except:
+                        pres_ds = None
+                if wind_ds is not None or pres_ds is not None:
+                    all_ds.append((fh_idx, wind_ds, pres_ds))
+                # Log variable names from first file for diagnostics
+                if fh_idx == 0:
+                    wvars = list(wind_ds.data_vars) if wind_ds else []
+                    pvars = list(pres_ds.data_vars) if pres_ds else []
+                    sys.stderr.write(f"[GFS] wind vars: {wvars}, pres vars: {pvars}\n")
 
             if not all_ds:
                 raise ValueError("No GRIB2 files decoded successfully")
 
-            # Extract grid from first file
-            sample = all_ds[0][1]
+            # Extract grid from first available dataset
+            sample = all_ds[0][1] or all_ds[0][2]
             lats = sample.latitude.values.tolist()
             lons = sample.longitude.values.tolist()
+
+            # Discover actual variable names from first file
+            wds0 = all_ds[0][1]
+            pds0 = all_ds[0][2]
+            u_var = next((v for v in ["u10","10u","u"] if wds0 and v in wds0), None)
+            v_var = next((v for v in ["v10","10v","v"] if wds0 and v in wds0), None)
+            p_var = next((v for v in ["prmsl","msl","mslet","sp"] if pds0 and v in pds0), None)
+            sys.stderr.write(f"[GFS] using u={u_var} v={v_var} p={p_var}\n")
 
             out = []
             for lat in lats:
                 for lon in lons:
-                    speed_kts, wind_dir, mslp = [], [], []
-                    for fh_idx, ds in all_ds:
-                        try:
-                            u = float(ds["u10"].sel(latitude=lat, longitude=lon, method="nearest").values)
-                            v = float(ds["v10"].sel(latitude=lat, longitude=lon, method="nearest").values)
-                        except:
+                    speed_kts, wind_dir_arr, mslp = [], [], []
+                    for fh_idx, wds, pds in all_ds:
+                        u, v = 0, 0
+                        if wds and u_var and v_var:
                             try:
-                                u = float(ds["u"].sel(latitude=lat, longitude=lon, method="nearest").values)
-                                v = float(ds["v"].sel(latitude=lat, longitude=lon, method="nearest").values)
+                                u = float(wds[u_var].sel(latitude=lat, longitude=lon, method="nearest").values)
+                                v = float(wds[v_var].sel(latitude=lat, longitude=lon, method="nearest").values)
                             except:
                                 u, v = 0, 0
                         spd = math.sqrt(u*u + v*v)
                         speed_kts.append(round(spd / 0.51444, 1))
                         d = (math.degrees(math.atan2(-u, -v)) + 360) % 360
-                        wind_dir.append(round(d, 0))
-                        try:
-                            p = float(ds["prmsl"].sel(latitude=lat, longitude=lon, method="nearest").values)
-                            mslp.append(round(p / 100, 1) if math.isfinite(p) else None)
-                        except:
+                        wind_dir_arr.append(round(d, 0))
+                        if pds and p_var:
                             try:
-                                p = float(ds["msl"].sel(latitude=lat, longitude=lon, method="nearest").values)
+                                p = float(pds[p_var].sel(latitude=lat, longitude=lon, method="nearest").values)
                                 mslp.append(round(p / 100, 1) if math.isfinite(p) else None)
                             except:
                                 mslp.append(None)
+                        else:
+                            mslp.append(None)
                     disp_lon = lon - 360 if lon > 180 else lon
                     out.append({
                         "lat": round(lat, 3), "lon": round(disp_lon, 3),
                         "times": times_ms, "source": "noaa_gfs",
-                        "windKts": speed_kts, "windDir": wind_dir, "mslp": mslp,
+                        "windKts": speed_kts, "windDir": wind_dir_arr, "mslp": mslp,
                     })
 
             # Cleanup
-            for _, ds in all_ds:
-                ds.close()
+            for _, wds, pds in all_ds:
+                if wds: wds.close()
+                if pds: pds.close()
             import shutil
             shutil.rmtree(tmpdir, ignore_errors=True)
 

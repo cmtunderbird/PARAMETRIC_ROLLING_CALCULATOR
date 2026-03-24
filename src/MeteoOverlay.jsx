@@ -235,6 +235,9 @@ function renderAtmoLayer(canvas, cols, rows, cw, ch, atmoResults, bounds, gridRe
     }
   }
   fillNulls(pGrid, mRows, mCols);
+  console.log("[renderAtmoLayer]", { mRows, mCols, windPtsCount: windPts.length,
+    pGridSample: pGrid[Math.floor(mRows/2)]?.[Math.floor(mCols/2)],
+    canvasSize: `${cw}x${ch}`, boundsUsed: bounds });
 
   // Isobars every 4 hPa (960–1044)
   const pLevels = [];
@@ -326,12 +329,29 @@ export default function MeteoCanvasOverlay({ marineGrid, atmoGrid, physicsGrid, 
     const { canvas, cols, rows, cw, ch } = renderSynopticImage(marineGrid, mode, shipParams, hourIdx);
     // All layers map onto the MARINE canvas — use marineGrid.bounds for pixel coords
     const canvasBounds = marineGrid.bounds;
+    console.log("[MeteoOverlay] canvas:", cw, "x", ch, "marine pts:", marineGrid.results.length,
+      "atmo pts:", atmoGrid?.results?.length || 0, "phys pts:", physicsGrid?.results?.length || 0);
     if (atmoGrid?.results?.length) {
       const aRes = atmoGrid.gridRes || marineGrid.gridRes;
+      // Debug: check first atmo point data
+      const sample = atmoGrid.results[0];
+      console.log("[MeteoOverlay] atmo sample:", {
+        lat: sample.lat, lon: sample.lon,
+        hasTimes: !!sample.times, timesLen: sample.times?.length,
+        hasWindKts: !!sample.windKts, windKtsLen: sample.windKts?.length,
+        firstWindKts: sample.windKts?.[0], firstWindDir: sample.windDir?.[0],
+        hasMslp: !!sample.mslp, firstMslp: sample.mslp?.[0],
+        aRes, hourIdx
+      });
       renderAtmoLayer(canvas, 0, 0, cw, ch, atmoGrid.results, canvasBounds, aRes, hourIdx);
     }
     if (physicsGrid?.results?.length) {
       const pRes = physicsGrid.gridRes || marineGrid.gridRes;
+      const sample = physicsGrid.results[0];
+      console.log("[MeteoOverlay] physics sample:", {
+        lat: sample.lat, lon: sample.lon,
+        firstSpeed: sample.currentSpeed?.[0], firstDir: sample.currentDir?.[0]
+      });
       renderCurrentsLayer(canvas, 0, 0, cw, ch, physicsGrid.results, canvasBounds, pRes, hourIdx);
     }
 
