@@ -42,6 +42,12 @@ export default class ErrorBoundary extends Component {
             <div style={{ color: "#EF4444", fontSize: 11, wordBreak: "break-word" }}>
               {this.state.error?.message || "Unknown error"}
             </div>
+            {this.state.error?.stack && (
+              <pre style={{ color: "#F59E0B", fontSize: 9, marginTop: 6,
+                whiteSpace: "pre-wrap", maxHeight: 100, overflow: "auto" }}>
+                {this.state.error.stack}
+              </pre>
+            )}
             {this.state.errorInfo?.componentStack && (
               <details style={{ marginTop: 8 }}>
                 <summary style={{ color: "#64748B", fontSize: 10, cursor: "pointer" }}>

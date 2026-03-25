@@ -279,6 +279,8 @@ function createWindow() {
     mainWindow.webContents.openDevTools({ mode: 'detach' });
   } else {
     mainWindow.loadFile(path.join(ROOT, 'dist', 'index.html'));
+    // TEMP: open DevTools to debug .toFixed() crash — remove after fixing
+    mainWindow.webContents.openDevTools({ mode: 'detach' });
   }
 
   // Open external links in default browser, not inside Electron
