@@ -74,6 +74,56 @@ function isolines(grid, rows, cols, level) {
   return segs;
 }
 
+// ─── Chain isoline segments into continuous polylines ────────────────────────
+// Marching squares produces disconnected segments. This links them end-to-end
+// into continuous polylines for smooth rendering.
+function chainSegments(segs, tolerance = 0.01) {
+  if (!segs.length) return [];
+  const chains = [];
+  const used = new Set();
+  function near(a, b) { return Math.abs(a.x - b.x) < tolerance && Math.abs(a.y - b.y) < tolerance; }
+  for (let i = 0; i < segs.length; i++) {
+    if (used.has(i)) continue;
+    const chain = [segs[i][0], segs[i][1]];
+    used.add(i);
+    let extended = true;
+    while (extended) {
+      extended = false;
+      for (let j = 0; j < segs.length; j++) {
+        if (used.has(j)) continue;
+        const [a, b] = segs[j];
+        const tail = chain[chain.length - 1];
+        const head = chain[0];
+        if (near(tail, a)) { chain.push(b); used.add(j); extended = true; }
+        else if (near(tail, b)) { chain.push(a); used.add(j); extended = true; }
+        else if (near(head, a)) { chain.unshift(b); used.add(j); extended = true; }
+        else if (near(head, b)) { chain.unshift(a); used.add(j); extended = true; }
+      }
+    }
+    if (chain.length >= 2) chains.push(chain);
+  }
+  return chains;
+}
+
+// ─── Chaikin curve smoothing — produces smooth curves from angular polylines ──
+// Each iteration doubles the point count and rounds corners.
+// 2-3 passes turn jagged marching-squares output into smooth isobars.
+function chaikinSmooth(points, iterations = 2) {
+  let pts = points;
+  for (let iter = 0; iter < iterations; iter++) {
+    if (pts.length < 3) return pts;
+    const out = [pts[0]]; // keep first point
+    for (let i = 0; i < pts.length - 1; i++) {
+      const p0 = pts[i], p1 = pts[i + 1];
+      out.push({ x: 0.75 * p0.x + 0.25 * p1.x, y: 0.75 * p0.y + 0.25 * p1.y });
+      out.push({ x: 0.25 * p0.x + 0.75 * p1.x, y: 0.25 * p0.y + 0.75 * p1.y });
+    }
+    out.push(pts[pts.length - 1]); // keep last point
+    pts = out;
+  }
+  return pts;
+}
+
 // ─── WMO Wind Barb renderer ───────────────────────────────────────────────────
 // dirFromDeg: meteorological (wind FROM direction). Staff points toward wind origin.
 // Barbs on left side of staff (when looking from station toward tip).
@@ -168,28 +218,35 @@ function renderSynopticImage(marineGrid, mode, shipParams, hourIdx) {
   }
   ctx.putImageData(img,0,0);
 
-  // ── Layer 2: wave isolines ──
+  // ── Layer 2: wave isolines (smoothed) ──
   const isoLvl = mode==="waveHeight"?[1,2,3,4,5,7]:mode==="wavePeriod"?[4,6,8,10,12]:[0.4,0.6,0.8,0.95];
-  ctx.lineWidth=0.9;
+  const toPixX = gx => (gx / (cols - 1)) * cw;
+  const toPixY = gy => (gy / (rows - 1)) * ch;
   for (const lvl of isoLvl) {
-    const segs=isolines(mGrid,rows,cols,lvl);
+    const segs = isolines(mGrid, rows, cols, lvl);
     if (!segs.length) continue;
-    ctx.strokeStyle="rgba(255,255,255,0.32)";
+    const chains = chainSegments(segs);
+    ctx.strokeStyle = "rgba(255,255,255,0.32)";
+    ctx.lineWidth = 0.9;
     ctx.beginPath();
-    for (const [p0,p1] of segs){
-      ctx.moveTo(p0.x/(cols-1)*cw, p0.y/(rows-1)*ch);
-      ctx.lineTo(p1.x/(cols-1)*cw, p1.y/(rows-1)*ch);
+    for (const chain of chains) {
+      const smooth = chaikinSmooth(chain, 3);
+      ctx.moveTo(toPixX(smooth[0].x), toPixY(smooth[0].y));
+      for (let i = 1; i < smooth.length; i++) {
+        ctx.lineTo(toPixX(smooth[i].x), toPixY(smooth[i].y));
+      }
     }
     ctx.stroke();
-    const lbl=mode==="waveHeight"?`${lvl}m`:mode==="wavePeriod"?`${lvl}s`:`${(lvl*100).toFixed(0)}%`;
-    ctx.font="500 9px sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
-    const step=Math.max(1,Math.floor(segs.length/2));
-    for (let si=Math.floor(step/3);si<segs.length;si+=step){
-      const [p0,p1]=segs[si];
-      const lx=((p0.x+p1.x)/2/(cols-1))*cw, ly=((p0.y+p1.y)/2/(rows-1))*ch;
-      const tw=ctx.measureText(lbl).width;
-      ctx.fillStyle="rgba(0,0,0,0.5)"; ctx.fillRect(lx-tw/2-2,ly-5.5,tw+4,11);
-      ctx.fillStyle="rgba(255,255,255,0.9)"; ctx.fillText(lbl,lx,ly);
+    // Label at midpoint of longest chain
+    const longest = chains.reduce((a, b) => a.length > b.length ? a : b, []);
+    if (longest.length > 2) {
+      const lbl = mode === "waveHeight" ? `${lvl}m` : mode === "wavePeriod" ? `${lvl}s` : `${(lvl * 100).toFixed(0)}%`;
+      ctx.font = "500 9px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      const mid = longest[Math.floor(longest.length / 2)];
+      const lx = toPixX(mid.x), ly = toPixY(mid.y);
+      const tw = ctx.measureText(lbl).width;
+      ctx.fillStyle = "rgba(0,0,0,0.5)"; ctx.fillRect(lx - tw / 2 - 2, ly - 5.5, tw + 4, 11);
+      ctx.fillStyle = "rgba(255,255,255,0.9)"; ctx.fillText(lbl, lx, ly);
     }
   }
   return { canvas, cols, rows, cw, ch };
@@ -240,80 +297,6 @@ function findPressureCenters(pGrid, mRows, mCols, gridRes, bounds, cw, ch) {
   return deduped;
 }
 
-// ─── Atmospheric Front Detection ────────────────────────────────────────────
-// Detects fronts from wind direction convergence + pressure trough lines.
-// Cold front: sharp wind veer (clockwise shift), tight isobar packing.
-// Warm front: gradual wind back (counter-clockwise shift), wider spacing.
-function detectFronts(pGrid, windPts, mRows, mCols, cw, ch) {
-  const fronts = [];
-  if (windPts.length < 8) return fronts;
-
-  // Build a coarse wind direction grid for convergence analysis
-  const cellW = cw / 12, cellH = ch / 10;
-  const wGrid = Array.from({ length: 10 }, () => Array(12).fill(null));
-  const sGrid = Array.from({ length: 10 }, () => Array(12).fill(null));
-  for (const wp of windPts) {
-    const gc = Math.floor(wp.px / cellW);
-    const gr = Math.floor(wp.py / cellH);
-    if (gc >= 0 && gc < 12 && gr >= 0 && gr < 10) {
-      wGrid[gr][gc] = wp.wd;
-      sGrid[gr][gc] = wp.ws;
-    }
-  }
-
-  // Detect wind direction convergence zones (sharp direction changes)
-  for (let r = 1; r < 9; r++) {
-    for (let c = 1; c < 11; c++) {
-      const d0 = wGrid[r][c], d1 = wGrid[r][c + 1], d2 = wGrid[r][c - 1];
-      const d3 = wGrid[r - 1][c], d4 = wGrid[r + 1][c];
-      if (d0 == null) continue;
-      // Check horizontal wind shift
-      const shifts = [];
-      if (d1 != null) shifts.push(((d1 - d0 + 540) % 360) - 180);
-      if (d2 != null) shifts.push(((d0 - d2 + 540) % 360) - 180);
-      if (d3 != null) shifts.push(((d0 - d3 + 540) % 360) - 180);
-      if (d4 != null) shifts.push(((d4 - d0 + 540) % 360) - 180);
-      if (!shifts.length) continue;
-      const maxShift = Math.max(...shifts.map(Math.abs));
-      const avgShift = shifts.reduce((a, b) => a + b, 0) / shifts.length;
-      if (maxShift > 25) {
-        const px = (c + 0.5) * cellW;
-        const py = (r + 0.5) * cellH;
-        // Positive avg shift = veering (clockwise) = cold front
-        // Negative avg shift = backing (counter-clockwise) = warm front
-        const type = avgShift > 0 ? "cold" : "warm";
-        fronts.push({ type, px, py, shift: maxShift, avgShift });
-      }
-    }
-  }
-
-  // Chain nearby front points into lines
-  const chains = [];
-  const used = new Set();
-  for (let i = 0; i < fronts.length; i++) {
-    if (used.has(i)) continue;
-    const chain = [fronts[i]];
-    used.add(i);
-    let extended = true;
-    while (extended) {
-      extended = false;
-      const last = chain[chain.length - 1];
-      for (let j = 0; j < fronts.length; j++) {
-        if (used.has(j)) continue;
-        if (fronts[j].type !== chain[0].type) continue;
-        const dist = Math.hypot(fronts[j].px - last.px, fronts[j].py - last.py);
-        if (dist < cellW * 3.5) {
-          chain.push(fronts[j]);
-          used.add(j);
-          extended = true;
-          break;
-        }
-      }
-    }
-    if (chain.length >= 2) chains.push(chain);
-  }
-  return chains;
-}
 
 // ── Layer 3: Isobars + Wind Barbs ─────────────────────────────────────────────
 // Renders onto the marine canvas using direct lat/lon → pixel mapping
@@ -359,8 +342,6 @@ function renderAtmoLayer(canvas, cols, rows, cw, ch, atmoResults, bounds, gridRe
   // ── H/L Pressure Centers ──
   const centers = findPressureCenters(pGrid, mRows, mCols, gridRes, bounds, cw, ch);
 
-  // ── Atmospheric Fronts ──
-  const frontChains = detectFronts(pGrid, windPts, mRows, mCols, cw, ch);
 
   // ── Render H/L centers ──
   for (const c of centers) {
@@ -389,83 +370,39 @@ function renderAtmoLayer(canvas, cols, rows, cw, ch, atmoResults, bounds, gridRe
     ctx.fillText((c.pressure||0).toFixed(0), c.px, c.py + 30);
   }
 
-  // ── Render Atmospheric Fronts ──
-  for (const chain of frontChains) {
-    const isCold = chain[0].type === "cold";
-    ctx.beginPath();
-    ctx.moveTo(chain[0].px, chain[0].py);
-    for (let i = 1; i < chain.length; i++) {
-      ctx.lineTo(chain[i].px, chain[i].py);
-    }
-    ctx.strokeStyle = isCold ? "rgba(0,100,255,0.85)" : "rgba(220,38,38,0.85)";
-    ctx.lineWidth = 3;
-    ctx.setLineDash([]);
-    ctx.stroke();
-    // Draw symbols along the front line
-    const symbolSpacing = 40;
-    for (let i = 0; i < chain.length - 1; i++) {
-      const a = chain[i], b = chain[i + 1];
-      const dist = Math.hypot(b.px - a.px, b.py - a.py);
-      const nSymbols = Math.max(1, Math.floor(dist / symbolSpacing));
-      const ang = Math.atan2(b.py - a.py, b.px - a.px);
-      // Perpendicular direction for triangles/semicircles (to the right of travel)
-      const perpAng = ang + Math.PI / 2;
-      for (let s = 0; s < nSymbols; s++) {
-        const t = (s + 0.5) / nSymbols;
-        const sx = a.px + (b.px - a.px) * t;
-        const sy = a.py + (b.py - a.py) * t;
-        if (isCold) {
-          // Cold front: blue triangles pointing in direction of movement
-          const sz = 8;
-          const tx = sx + Math.cos(perpAng) * sz;
-          const ty = sy + Math.sin(perpAng) * sz;
-          const lx = sx + Math.cos(ang + Math.PI * 0.8) * sz * 0.6;
-          const ly = sy + Math.sin(ang + Math.PI * 0.8) * sz * 0.6;
-          const rx = sx + Math.cos(ang - Math.PI * 0.8) * sz * 0.6;
-          const ry = sy + Math.sin(ang - Math.PI * 0.8) * sz * 0.6;
-          ctx.beginPath();
-          ctx.moveTo(tx, ty);
-          ctx.lineTo(lx, ly);
-          ctx.lineTo(rx, ry);
-          ctx.closePath();
-          ctx.fillStyle = "rgba(0,100,255,0.85)";
-          ctx.fill();
-        } else {
-          // Warm front: red semicircles pointing in direction of movement
-          const sz = 7;
-          ctx.beginPath();
-          ctx.arc(sx, sy, sz, perpAng - Math.PI / 2, perpAng + Math.PI / 2);
-          ctx.fillStyle = "rgba(220,38,38,0.85)";
-          ctx.fill();
-        }
-      }
-    }
-  }
-
-  // Isobars every 4 hPa (960–1044)
+  // Isobars every 4 hPa (960–1044) — smoothed with Chaikin curves
   const pLevels = [];
   for (let p=960;p<=1044;p+=4) pLevels.push(p);
-  ctx.lineWidth=1.2;
+  const isoToX = gx => (gx / (mCols - 1)) * cw;
+  const isoToY = gy => (gy / (mRows - 1)) * ch;
   for (const lvl of pLevels) {
-    const segs=isolines(pGrid,mRows,mCols,lvl);
+    const segs = isolines(pGrid, mRows, mCols, lvl);
     if (!segs.length) continue;
-    const isRound50=lvl%20===0;
-    ctx.strokeStyle=isRound50?"rgba(255,220,50,0.75)":"rgba(255,255,255,0.35)";
-    ctx.lineWidth=isRound50?1.8:0.9;
-    ctx.setLineDash(isRound50?[]:[4,3]);
+    const chains = chainSegments(segs);
+    const isRound = lvl % 20 === 0;
+    ctx.strokeStyle = isRound ? "rgba(255,220,50,0.75)" : "rgba(255,255,255,0.35)";
+    ctx.lineWidth = isRound ? 1.8 : 0.9;
+    ctx.setLineDash(isRound ? [] : [4, 3]);
     ctx.beginPath();
-    for (const [p0,p1] of segs){
-      ctx.moveTo(p0.x/(mCols-1)*cw, p0.y/(mRows-1)*ch);
-      ctx.lineTo(p1.x/(mCols-1)*cw, p1.y/(mRows-1)*ch);
+    for (const chain of chains) {
+      const smooth = chaikinSmooth(chain, 3);
+      ctx.moveTo(isoToX(smooth[0].x), isoToY(smooth[0].y));
+      for (let i = 1; i < smooth.length; i++) {
+        ctx.lineTo(isoToX(smooth[i].x), isoToY(smooth[i].y));
+      }
     }
     ctx.stroke();
-    if (isRound50 && segs.length>0) {
+    // Label at midpoint of longest chain for major isobars
+    if (isRound && chains.length > 0) {
       ctx.setLineDash([]);
-      ctx.font="bold 10px sans-serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
-      const [p0,p1]=segs[Math.floor(segs.length/2)];
-      const lx=((p0.x+p1.x)/2/(mCols-1))*cw, ly=((p0.y+p1.y)/2/(mRows-1))*ch;
-      ctx.fillStyle="rgba(0,0,0,0.6)"; ctx.fillRect(lx-13,ly-6,26,12);
-      ctx.fillStyle="rgba(255,220,50,0.95)"; ctx.fillText(`${lvl}`,lx,ly);
+      const longest = chains.reduce((a, b) => a.length > b.length ? a : b, []);
+      if (longest.length > 2) {
+        ctx.font = "bold 10px sans-serif"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        const mid = longest[Math.floor(longest.length / 2)];
+        const lx = isoToX(mid.x), ly = isoToY(mid.y);
+        ctx.fillStyle = "rgba(0,0,0,0.6)"; ctx.fillRect(lx - 13, ly - 6, 26, 12);
+        ctx.fillStyle = "rgba(255,220,50,0.95)"; ctx.fillText(`${lvl}`, lx, ly);
+      }
     }
   }
   ctx.setLineDash([]);
