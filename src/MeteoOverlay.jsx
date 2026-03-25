@@ -82,8 +82,8 @@ function drawBarb(ctx, cx, cy, speedKts, dirFromDeg, sc=1) {
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(dirFromDeg * Math.PI / 180);
-  ctx.strokeStyle="rgba(255,255,255,0.92)";
-  ctx.fillStyle="rgba(255,255,255,0.92)";
+  ctx.strokeStyle="rgba(0,0,0,0.85)";
+  ctx.fillStyle="rgba(0,0,0,0.85)";
   ctx.lineWidth=1.5*sc; ctx.lineCap="round";
 
   if (speedKts < 2.5) {                 // calm: two circles
