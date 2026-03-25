@@ -128,17 +128,17 @@ function chaikinSmooth(points, iterations = 2) {
 // dirFromDeg: meteorological (wind FROM direction). Staff points toward wind origin.
 // Barbs on left side of staff (when looking from station toward tip).
 function drawBarb(ctx, cx, cy, speedKts, dirFromDeg, sc=1) {
-  const STAFF=26*sc, FULL=11*sc, HALF=6*sc, PEN=11*sc, SPC=5*sc;
+  const STAFF=20*sc, FULL=8*sc, HALF=4.5*sc, PEN=8*sc, SPC=4*sc;
   ctx.save();
   ctx.translate(cx, cy);
   ctx.rotate(dirFromDeg * Math.PI / 180);
   ctx.strokeStyle="rgba(0,0,0,0.85)";
   ctx.fillStyle="rgba(0,0,0,0.85)";
-  ctx.lineWidth=1.5*sc; ctx.lineCap="round";
+  ctx.lineWidth=0.8*sc; ctx.lineCap="round";
 
   if (speedKts < 2.5) {                 // calm: two circles
-    ctx.beginPath(); ctx.arc(0,0,4*sc,0,Math.PI*2); ctx.stroke();
-    ctx.beginPath(); ctx.arc(0,0,7*sc,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0,0,3*sc,0,Math.PI*2); ctx.stroke();
+    ctx.beginPath(); ctx.arc(0,0,5*sc,0,Math.PI*2); ctx.stroke();
     ctx.restore(); return;
   }
   ctx.beginPath(); ctx.moveTo(0,0); ctx.lineTo(0,-STAFF); ctx.stroke();
@@ -150,11 +150,11 @@ function drawBarb(ctx, cx, cy, speedKts, dirFromDeg, sc=1) {
     rem-=50; y+=PEN+1*sc;
   }
   while (rem>=7.5) {                    // full barb (10 kt)
-    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(-FULL, y-3*sc); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(-FULL, y-2*sc); ctx.stroke();
     rem-=10; y+=SPC;
   }
   if (rem>=2.5) {                       // half barb (5 kt)
-    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(-HALF, y-1.5*sc); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(0,y); ctx.lineTo(-HALF, y-1*sc); ctx.stroke();
   }
   ctx.restore();
 }
