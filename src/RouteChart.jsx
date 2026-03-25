@@ -52,7 +52,7 @@ const makeWpIcon = (color, label, size=28) => L.divIcon({
   html:`<div style="width:${size}px;height:${size}px;border-radius:50%;background:${color};
     border:2.5px solid #fff;display:flex;align-items:center;justify-content:center;
     font-size:${size<26?8:10}px;font-weight:900;color:#fff;
-    font-family:'JetBrains Mono',monospace;box-shadow:0 2px 8px rgba(0,0,0,0.5)">${label}</div>`,
+    font-family:'JetBrains Mono',monospace;box-shadow:0 2px 8px rgba(0,0,0,0.5);cursor:grab">${label}</div>`,
 });
 const bospIcon = makeWpIcon("#16A34A","▶",32);
 const eospIcon = makeWpIcon("#DC2626","■",32);
@@ -532,10 +532,11 @@ export default function RouteChart({ shipParams }) {
               return displayPos?.status === "underway" ? <ShipPositionLayer pos={displayPos} weather={chartShipPos ? chartShipWx : shipWx} /> : null;
             })()}
 
-            {editMode && route?.waypoints.map((wp, idx) => <DraggableWpMarker key={`drag-${idx}`} wp={wp} idx={idx} onMove={wpMove} />)}
+            {/* Draggable waypoint overlays removed — markers below are natively draggable */}
 
-            {/* BOSP marker */}
-            {route && <Marker position={[route.waypoints[0].lat,route.waypoints[0].lon]} icon={bospIcon}>
+            {/* BOSP marker — draggable */}
+            {route && <Marker position={[route.waypoints[0].lat,route.waypoints[0].lon]} icon={bospIcon} draggable={true}
+              eventHandlers={{ dragend: e => { const {lat,lng}=e.target.getLatLng(); wpMove(0,parseFloat(lat.toFixed(5)),parseFloat(lng.toFixed(5))); } }}>
               <Tooltip direction="top" offset={[0,-18]} permanent><b style={{fontFamily:"'JetBrains Mono',monospace"}}>BOSP</b></Tooltip>
               <Popup><WpPopup wp={{...route.waypoints[0],...(voyageWPs?.[0]||{}),
                 weather:voyageWeather?.find(p=>Math.abs(p.lat-route.waypoints[0].lat)<0.1)?.weather||null}} shipParams={shipParams}/></Popup>
@@ -544,7 +545,8 @@ export default function RouteChart({ shipParams }) {
             {/* EOSP marker */}
             {route && route.waypoints.length>1 && (() => {
               const last=route.waypoints[route.waypoints.length-1]; const lastVW=voyageWPs?.[voyageWPs.length-1]; const lastWeather=voyageWeather?.[voyageWeather.length-1];
-              return (<Marker position={[last.lat,last.lon]} icon={eospIcon}>
+              return (<Marker position={[last.lat,last.lon]} icon={eospIcon} draggable={true}
+                eventHandlers={{ dragend: e => { const {lat,lng}=e.target.getLatLng(); wpMove(route.waypoints.length-1,parseFloat(lat.toFixed(5)),parseFloat(lng.toFixed(5))); } }}>
                 <Tooltip direction="top" offset={[0,-18]} permanent>
                   <div style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10}}><b>EOSP</b>{lastVW&&<><br/>{new Date(lastVW.etaMs).toUTCString().slice(5,22)}</>}</div>
                 </Tooltip>
@@ -555,7 +557,8 @@ export default function RouteChart({ shipParams }) {
             {/* Intermediate waypoints */}
             {route && route.waypoints.slice(1,-1).map((wp,i)=>{
               const vwp=voyageWPs?.[i+1]; const nearWx=voyageWeather?.find(p=>Math.abs(p.lat-wp.lat)<0.5&&Math.abs(p.lon-wp.lon)<0.5); const sev=nearWx?.riskSeverity??0;
-              return (<Marker key={wp.id} position={[wp.lat,wp.lon]} icon={riskIcon(sev,i+2)}>
+              return (<Marker key={wp.id} position={[wp.lat,wp.lon]} icon={riskIcon(sev,i+2)} draggable={true}
+                eventHandlers={{ dragend: e => { const {lat,lng}=e.target.getLatLng(); wpMove(i+1,parseFloat(lat.toFixed(5)),parseFloat(lng.toFixed(5))); } }}>
                 {route.waypoints.length<=20&&<Tooltip direction="top" offset={[0,-14]} permanent>
                   <span style={{fontSize:9,fontFamily:"'JetBrains Mono',monospace"}}>{wp.name||`WP${i+2}`}</span></Tooltip>}
                 <Popup><WpPopup wp={{...wp,...(vwp||{}),weather:nearWx?.weather||null,motions:nearWx?.motions||null,motionStatus:nearWx?.motionStatus||null}} shipParams={shipParams}/></Popup>
