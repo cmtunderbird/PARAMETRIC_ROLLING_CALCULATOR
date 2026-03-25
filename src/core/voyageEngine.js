@@ -1,6 +1,6 @@
 // ─── voyageEngine.js — Voyage ETA calculation and route utilities ────────────
 // Extracted from weatherApi.js — Phase 1, Item 5
-// Fixes the legNM bug: was set to cumulative NM, now set to individual leg distance.
+// Supports per-leg speeds and configurable BOSP/EOSP waypoint indices.
 
 // ── Haversine distance (NM) between two points ─────────────────────────────
 export function haversineNM(lat1, lon1, lat2, lon2) {
@@ -20,32 +20,62 @@ export function closestHourIdx(times_unix, targetMs) {
 }
 
 // ── Calculate voyage ETAs for each waypoint ─────────────────────────────────
-// Given waypoints, BOSP time, and speed, returns waypoints annotated with:
-//   cumNM  — cumulative distance from BOSP
-//   legNM  — distance of this individual leg (FIXED: was incorrectly set to cumNM)
-//   etaMs  — estimated time of arrival in milliseconds
-//   heading — course to next waypoint (degrees true)
-export function calcVoyageETAs(waypoints, bospTimeMs, speedKts) {
-  if (!waypoints?.length || speedKts <= 0) return [];
+// Supports per-leg speeds and configurable BOSP/EOSP indices.
+//
+// @param {Array}  waypoints    — route waypoints [{lat, lon, name, ...}]
+// @param {number} bospTimeMs   — BOSP departure time (ms since epoch)
+// @param {number} defaultSpeed — default speed in knots (fallback)
+// @param {Object} opts
+//   opts.bospIdx   — index of BOSP waypoint (default 0)
+//   opts.eospIdx   — index of EOSP waypoint (default last)
+//   opts.legSpeeds — {[legIndex]: speed} per-leg speed overrides
+//
+// Returns waypoints annotated with cumNM, legNM, etaMs, heading, legSpeed.
+// Waypoints before BOSP or after EOSP get etaMs = null (outside passage).
+export function calcVoyageETAs(waypoints, bospTimeMs, defaultSpeed, opts = {}) {
+  if (!waypoints?.length || defaultSpeed <= 0) return [];
+  const bospIdx = opts.bospIdx ?? 0;
+  const eospIdx = opts.eospIdx ?? (waypoints.length - 1);
+  const legSpeeds = opts.legSpeeds || {};
+
   let cumNM = 0;
+  let cumTimeMs = 0;
+
   return waypoints.map((wp, i) => {
-    if (i === 0) {
-      // BOSP — compute heading to next WP
-      const nextWp = waypoints[1];
-      const heading = nextWp ? calcBearing(wp.lat, wp.lon, nextWp.lat, nextWp.lon) : 0;
-      return { ...wp, cumNM: 0, legNM: 0, etaMs: bospTimeMs, heading };
+    const nextWp = waypoints[i + 1];
+    const prevWp = i > 0 ? waypoints[i - 1] : null;
+
+    // Heading: course TO this WP from previous (or to next if first)
+    const heading = prevWp
+      ? calcBearing(prevWp.lat, prevWp.lon, wp.lat, wp.lon)
+      : nextWp ? calcBearing(wp.lat, wp.lon, nextWp.lat, nextWp.lon) : 0;
+
+    // Before BOSP or after EOSP — outside sea passage
+    if (i < bospIdx || i > eospIdx) {
+      return { ...wp, cumNM: 0, legNM: 0, etaMs: null, heading, legSpeed: null, inPassage: false };
     }
-    const prev = waypoints[i - 1];
-    const legDist = haversineNM(prev.lat, prev.lon, wp.lat, wp.lon);
+
+    // BOSP waypoint
+    if (i === bospIdx) {
+      cumNM = 0;
+      cumTimeMs = 0;
+      return { ...wp, cumNM: 0, legNM: 0, etaMs: bospTimeMs, heading,
+               legSpeed: legSpeeds[i] ?? defaultSpeed, inPassage: true };
+    }
+
+    // In-passage waypoint: compute leg distance and time
+    const legDist = haversineNM(prevWp.lat, prevWp.lon, wp.lat, wp.lon);
+    // Use per-leg speed for the leg FROM previous WP TO this WP
+    // legSpeeds keyed by the index of the WP the leg departs FROM
+    const speed = legSpeeds[i - 1] ?? defaultSpeed;
     cumNM += legDist;
-    // Heading: use course TO this waypoint from previous
-    const heading = calcBearing(prev.lat, prev.lon, wp.lat, wp.lon);
+    cumTimeMs += (legDist / speed) * 3600000;
+
     return {
-      ...wp,
-      cumNM,
-      legNM: legDist,  // BUG FIX: was `cumNM` (cumulative), now individual leg distance
-      etaMs: bospTimeMs + (cumNM / speedKts) * 3600000,
-      heading,
+      ...wp, cumNM, legNM: legDist, heading,
+      etaMs: bospTimeMs + cumTimeMs,
+      legSpeed: speed,
+      inPassage: i <= eospIdx,
     };
   });
 }
@@ -62,7 +92,6 @@ export function calcBearing(lat1, lon1, lat2, lon2) {
 }
 
 // ── Cumulative distances for an array of sample points ──────────────────────
-// Used by RouteChart.jsx for ETA interpolation along sampled route points
 export function cumulativeDistances(points) {
   const dists = [0];
   for (let i = 1; i < points.length; i++) {

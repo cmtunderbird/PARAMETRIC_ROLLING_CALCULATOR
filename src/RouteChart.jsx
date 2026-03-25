@@ -119,6 +119,9 @@ export default function RouteChart({ shipParams }) {
   const nowLocal = () => { const d=new Date(); d.setSeconds(0,0); return d.toISOString().slice(0,16); };
   const [bospDT, setBospDT] = useState(nowLocal);
   const [voyageSpeed, setVoyageSpeed] = useState(shipParams?.speed||15);
+  const [bospIdx, setBospIdx] = useState(0);
+  const [eospIdx, setEospIdx] = useState(null); // null = last WP
+  const [legSpeeds, setLegSpeeds] = useState({}); // {wpIndex: speed} per-leg overrides
   const [voyageWPs, setVoyageWPs] = useState(null);
   const [voyageWeather, setVoyageWeather] = useState(null);
   const [vwLoading, setVwLoading] = useState(false);
@@ -330,7 +333,9 @@ export default function RouteChart({ shipParams }) {
   // ── Voyage calc (kept for manual ETA recalc without refetching weather) ──
   const calcVoyage = () => {
     if (!route?.waypoints) return;
-    setVoyageWPs(calcVoyageETAs(route.waypoints, new Date(bospDT).getTime(), voyageSpeed));
+    const ei = eospIdx ?? (route.waypoints.length - 1);
+    setVoyageWPs(calcVoyageETAs(route.waypoints, new Date(bospDT).getTime(), voyageSpeed,
+      { bospIdx, eospIdx: ei, legSpeeds }));
     setVoyageWeather(null);
   };
 
@@ -421,6 +426,9 @@ export default function RouteChart({ shipParams }) {
 
         <VoyagePlan route={route} bospDT={bospDT} setBospDT={setBospDT}
           voyageSpeed={voyageSpeed} setVoyageSpeed={setVoyageSpeed}
+          bospIdx={bospIdx} setBospIdx={setBospIdx}
+          eospIdx={eospIdx ?? (route?.waypoints?.length - 1 || 0)} setEospIdx={setEospIdx}
+          legSpeeds={legSpeeds} setLegSpeeds={setLegSpeeds}
           calcVoyage={calcVoyage} voyageWPs={voyageWPs} eospStr={eospStr} voyageDaysStr={voyageDaysStr} />
 
         {/* Live Ship Position */}
