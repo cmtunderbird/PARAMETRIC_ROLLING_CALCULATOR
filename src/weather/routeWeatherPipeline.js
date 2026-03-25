@@ -179,7 +179,7 @@ export async function fetchRouteWeather({
     try {
       if (windSource === "noaa_gfs" && family.bridgeUp) {
         const gfsResult = await fetchNoaaGfs(gridBounds, 120);
-        atmoGrid = { results: gfsResult.results, gridRes: 0.25, // GFS native resolution
+        atmoGrid = { results: gfsResult.results, gridRes: 0.25,
           bounds: gridBounds, provider: "noaa_gfs", run: gfsResult.run };
       } else {
         const aResult = await fetchAtmosphericGrid(gridPts, 7, gridBounds, effectiveGridRes);
@@ -188,9 +188,21 @@ export async function fetchRouteWeather({
       }
     } catch (e) {
       log.push({ stage: "wind_grid", error: e.message });
+      // ── FALLBACK: if NOAA GFS failed, try Open-Meteo for wind ──
+      if (windSource === "noaa_gfs") {
+        onProgress("GFS wind failed — falling back to Open-Meteo...", 45, e.message);
+        try {
+          const aResult = await fetchAtmosphericGrid(gridPts, 7, gridBounds, effectiveGridRes);
+          atmoGrid = { results: aResult.results, gridRes: effectiveGridRes,
+            bounds: gridBounds, provider: "openmeteo_fallback" };
+          log.push({ stage: "wind_grid_fallback", detail: "Open-Meteo wind OK" });
+        } catch (e2) {
+          log.push({ stage: "wind_grid_fallback", error: e2.message });
+        }
+      }
     }
   }
-  progress("wind_grid", atmoGrid ? `${atmoGrid.results?.length} pts (${atmoGrid.provider})` : "skipped");
+  progress("wind_grid", atmoGrid ? `${atmoGrid.results?.length} pts (${atmoGrid.provider})` : "NO WIND DATA");
 
   // ═══ STAGE 4b: CMEMS currents (optional) ═══
   let physicsGrid = null;
