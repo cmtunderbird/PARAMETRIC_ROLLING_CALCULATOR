@@ -236,7 +236,7 @@ export async function fetchRouteWeather({
       // De-duplicate sample points
       const uniq = [], seen = new Set();
       for (const p of ptsWithETA) {
-        const k = `${p.lat.toFixed(1)},${p.lon.toFixed(1)}`;
+        const k = `${(p.lat||0).toFixed(1)},${(p.lon||0).toFixed(1)}`;
         if (!seen.has(k)) { seen.add(k); uniq.push(p); }
       }
 

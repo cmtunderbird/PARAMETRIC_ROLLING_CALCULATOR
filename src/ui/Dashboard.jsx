@@ -126,19 +126,19 @@ export default function Dashboard({
             <span style={{ color: "#94A3B8", fontSize: 10 }}>cost\u00d7{isFinite(costFactor) ? costFactor.toFixed(2) : "\u221e"}</span>
           </div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 2 }}>
-            {statBox("Roll Amp", motions ? motions.roll.toFixed(1) : "\u2014", "\u00b0",
+            {statBox("Roll Amp", motions ? (motions.roll||0).toFixed(1) : "\u2014", "\u00b0",
               motions && motions.roll >= SafetyLimits.maxRollDangerous ? "#DC2626"
               : motions && motions.roll >= SafetyLimits.maxRollSafe ? "#D97706" : "#22D3EE")}
-            {statBox("Pitch Amp", motions ? motions.pitch.toFixed(1) : "\u2014", "\u00b0",
+            {statBox("Pitch Amp", motions ? (motions.pitch||0).toFixed(1) : "\u2014", "\u00b0",
               motions && motions.pitch >= SafetyLimits.maxPitchDangerous ? "#DC2626"
               : motions && motions.pitch >= SafetyLimits.maxPitchSafe ? "#D97706" : "#22D3EE")}
-            {statBox("Bridge Acc", motions ? motions.bridgeAcc.toFixed(2) : "\u2014", "m/s\u00b2",
+            {statBox("Bridge Acc", motions ? (motions.bridgeAcc||0).toFixed(2) : "\u2014", "m/s\u00b2",
               motions && motions.bridgeAcc >= SafetyLimits.maxAccelDangerous ? "#DC2626"
               : motions && motions.bridgeAcc >= SafetyLimits.maxAccelSafe ? "#D97706" : "#10B981")}
-            {statBox("Slam Prob", motions ? (motions.slam * 100).toFixed(1) : "\u2014", "%",
+            {statBox("Slam Prob", motions ? ((motions.slam??0)*100).toFixed(1) : "\u2014", "%",
               motions && motions.slam >= SafetyLimits.maxSlamMarginal ? "#DC2626"
               : motions && motions.slam >= SafetyLimits.maxSlamSafe ? "#D97706" : "#10B981")}
-            {statBox("Green Water", motions ? (motions.greenWater * 100).toFixed(1) : "\u2014", "%",
+            {statBox("Green Water", motions ? ((motions.greenWater??0)*100).toFixed(1) : "\u2014", "%",
               motions && motions.greenWater > 0.10 ? "#EA580C" : "#10B981")}
             {statBox("Speed Loss", speedLossPct.toFixed(1), "%", speedLossPct > 15 ? "#EA580C" : "#94A3B8")}
           </div>

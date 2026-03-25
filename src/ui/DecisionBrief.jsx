@@ -109,12 +109,12 @@ export default function DecisionBrief({
           </div>
           <div style={{ color: "#94A3B8", fontSize: 10, marginTop: 4 }}>
             Cost factor: <span style={{ color: sev.color, fontWeight: 700 }}>
-              {isFinite(rec.currentRisk) ? rec.currentRisk.toFixed(2) : "∞"}
+              {isFinite(rec.currentRisk) ? (rec.currentRisk||0).toFixed(2) : "∞"}
             </span>
           </div>
           {rec.currentCell && (
             <div style={{ color: "#64748B", fontSize: 9, marginTop: 2 }}>
-              Roll: {rec.currentCell.roll?.toFixed(1)}° | Slam: {(rec.currentCell.slam * 100).toFixed(0)}%
+              Roll: {rec.currentCell.roll?.toFixed(1)}° | Slam: {((rec.currentCell.slam??0)*100).toFixed(0)}%
             </div>
           )}
         </div>
@@ -132,11 +132,11 @@ export default function DecisionBrief({
             </div>
             <div style={{ color: "#94A3B8", fontSize: 10, marginTop: 4 }}>
               Cost factor: <span style={{ color: "#22C55E", fontWeight: 700 }}>
-                {isFinite(rec.recommendedRisk) ? rec.recommendedRisk.toFixed(2) : "—"}
+                {isFinite(rec.recommendedRisk) ? (rec.recommendedRisk||0).toFixed(2) : "—"}
               </span>
             </div>
             <div style={{ color: "#64748B", fontSize: 9, marginTop: 2 }}>
-              Roll: {rec.bestCell.roll?.toFixed(1)}° | Slam: {(rec.bestCell.slam * 100).toFixed(0)}%
+              Roll: {rec.bestCell.roll?.toFixed(1)}° | Slam: {((rec.bestCell.slam??0)*100).toFixed(0)}%
             </div>
           </div>
         )}

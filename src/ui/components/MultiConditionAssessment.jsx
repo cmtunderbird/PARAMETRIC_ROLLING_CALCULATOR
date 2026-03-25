@@ -127,10 +127,10 @@ export default function MultiConditionAssessment({
                   {r.motions?.roll?.toFixed(1) ?? "—"}°
                 </b></div>
                 <div>Slam: <b style={{ color: r.motions?.slam > 0.1 ? "#EF4444" : "#E2E8F0" }}>
-                  {r.motions ? (r.motions.slam * 100).toFixed(0) : "—"}%
+                  {r.motions ? ((r.motions.slam??0)*100).toFixed(0) : "—"}%
                 </b></div>
                 <div>Cost: <b style={{ color: zColor }}>
-                  {isFinite(r.costFactor) ? r.costFactor.toFixed(2) : "∞"}
+                  {isFinite(r.costFactor) ? (r.costFactor||0).toFixed(2) : "∞"}
                 </b></div>
               </div>
             </div>

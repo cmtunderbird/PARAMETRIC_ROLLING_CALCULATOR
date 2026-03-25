@@ -400,7 +400,7 @@ function renderAtmoLayer(canvas, cols, rows, cw, ch, atmoResults, bounds, gridRe
     ctx.fillStyle = "rgba(0,0,0,0.7)";
     ctx.fillRect(c.px - 16, c.py + 24, 32, 12);
     ctx.fillStyle = color;
-    ctx.fillText(c.pressure.toFixed(0), c.px, c.py + 30);
+    ctx.fillText((c.pressure||0).toFixed(0), c.px, c.py + 30);
   }
 
   // ── Render Atmospheric Fronts ──

@@ -310,7 +310,7 @@ export function generateRecommendation({
   let summary;
   if (severity === "CRITICAL") {
     summary = `FORBIDDEN conditions detected. ${
-      currentCell.roll > 30 ? `Roll amplitude ${currentCell.roll.toFixed(0)}° exceeds safe limits.`
+      currentCell.roll > 30 ? `Roll amplitude ${(currentCell.roll||0).toFixed(0)}° exceeds safe limits.`
       : "Immediate course and/or speed change required."
     }`;
   } else if (severity === "HIGH") {

@@ -125,9 +125,9 @@ export default function SeaSwellResonanceCheck({
                   {c.syncRatio !== null && isFinite(c.syncRatio) ? c.syncRatio.toFixed(3) : "∞"}
                 </b> {c.isSyncResonance && <span style={{ color: "#EF4444", fontWeight: 800 }}>⚠ SYNC</span>}</div>
                 <div>λ/L: <b style={{ color: c.isLengthMatch ? "#F59E0B" : "#94A3B8" }}>
-                  {c.lenRatio.toFixed(2)}
+                  {(c.lenRatio||0).toFixed(2)}
                 </b> {c.isLengthMatch && <span style={{ color: "#F59E0B" }}>≈ 1.0</span>}</div>
-                <div>3-Factor: <b style={{ color }}>{(c.risk3f * 100).toFixed(0)}%</b></div>
+                <div>3-Factor: <b style={{ color }}>{((c.risk3f??0)*100).toFixed(0)}%</b></div>
               </div>
             </div>
           );

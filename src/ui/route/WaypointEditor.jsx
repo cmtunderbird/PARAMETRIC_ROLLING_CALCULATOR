@@ -39,7 +39,7 @@ export default function WaypointEditor({
                       whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
                       fontFamily:"'JetBrains Mono',monospace"}}>{wp.name||`WP${idx+1}`}</div>
                     <div style={{color:"#64748B",fontSize:8,fontFamily:"'JetBrains Mono',monospace"}}>
-                      {wp.lat.toFixed(3)}{"\u00b0"}, {wp.lon.toFixed(3)}{"\u00b0"}</div>
+                      {(wp.lat||0).toFixed(3)}{"\u00b0"}, {(wp.lon||0).toFixed(3)}{"\u00b0"}</div>
                   </div>
                   <div style={{display:"flex",gap:2,flexShrink:0}}>
                     <button onClick={()=>wpMoveUp(idx)} disabled={idx===0} title="Move up"

@@ -69,7 +69,7 @@ function DraggableWpMarker({ wp, idx, onMove }) {
     <Marker ref={markerRef} position={[wp.lat,wp.lon]} icon={icon} draggable={true}
       eventHandlers={{ dragend: e => { const {lat,lng}=e.target.getLatLng(); onMove(idx,parseFloat(lat.toFixed(5)),parseFloat(lng.toFixed(5))); } }}>
       <Tooltip direction="top" offset={[0,-12]}>
-        <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10}}>{wp.name||`WP${idx+1}`}<br/>{wp.lat.toFixed(4)}°, {wp.lon.toFixed(4)}°</span>
+        <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10}}>{wp.name||`WP${idx+1}`}<br/>{(wp.lat||0).toFixed(4)}°, {(wp.lon||0).toFixed(4)}°</span>
       </Tooltip>
     </Marker>
   );
@@ -658,7 +658,7 @@ export default function RouteChart({ shipParams }) {
             {SH("Route Info")}
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,fontSize:11}}>
               <div><span style={{color:"#64748B"}}>Waypoints: </span><b style={{color:"#F59E0B"}}>{route.waypoints.length}</b></div>
-              <div><span style={{color:"#64748B"}}>Distance: </span><b style={{color:"#3B82F6"}}>{routeStats.totalNM.toFixed(0)} NM</b></div>
+              <div><span style={{color:"#64748B"}}>Distance: </span><b style={{color:"#3B82F6"}}>{(routeStats.totalNM||0).toFixed(0)} NM</b></div>
               <div><span style={{color:"#64748B"}}>ETA: </span><b style={{color:"#DC2626"}}>{voyageDaysStr} d</b></div>
             </div>
           </div>
