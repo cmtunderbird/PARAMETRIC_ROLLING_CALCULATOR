@@ -134,10 +134,10 @@ function buildPopupHtml(pos, wx) {
   const fmt = v => v != null ? v.toFixed(1) : "—";
   return `<div style="font-family:'JetBrains Mono',monospace;font-size:11px;min-width:190px">
     <div style="font-weight:800;color:#22D3EE;margin-bottom:6px;font-size:13px">⛵ SHIP POSITION</div>
-    <div>Lat: <b>${pos.lat.toFixed(4)}°</b> Lon: <b>${pos.lon.toFixed(4)}°</b></div>
-    <div>Hdg: <b>${pos.heading.toFixed(0)}°T</b> &nbsp;|&nbsp; COG: <b>${pos.cog.toFixed(0)}°T</b></div>
-    <div>Dist from BOSP: <b>${pos.cumNM.toFixed(1)} NM</b></div>
-    <div>Elapsed: <b>${pos.elapsed_h.toFixed(1)} h</b></div>
+    <div>Lat: <b>${(pos.lat||0).toFixed(4)}°</b> Lon: <b>${(pos.lon||0).toFixed(4)}°</b></div>
+    <div>Hdg: <b>${(pos.heading||0).toFixed(0)}°T</b> &nbsp;|&nbsp; COG: <b>${(pos.cog||0).toFixed(0)}°T</b></div>
+    <div>Dist from BOSP: <b>${(pos.cumNM||0).toFixed(1)} NM</b></div>
+    <div>Elapsed: <b>${(pos.elapsed_h||0).toFixed(1)} h</b></div>
     ${wx ? `<hr style="border-color:#334155;margin:6px 0"/>
     <div>Hs: <b>${fmt(wx.waveHeight)}m</b> &nbsp; Tw: <b>${fmt(wx.wavePeriod)}s</b></div>
     <div>Swell: <b>${fmt(wx.swellHeight)}m / ${fmt(wx.swellPeriod)}s</b></div>
@@ -441,9 +441,9 @@ export function ShipInfoPanel({ pos, weather, shipParams, motions, motionStatus 
       {/* Position */}
       <div style={{padding:"6px 8px",background:"#0F172A",borderRadius:4,border:"1px solid #334155",
         fontFamily:"'JetBrains Mono',monospace",fontSize:10,lineHeight:1.8}}>
-        <span style={{color:"#64748B"}}>LAT</span> <b style={{color:"#22D3EE"}}>{Math.abs(pos.lat).toFixed(4)}° {pos.lat>=0?"N":"S"}</b>
+        <span style={{color:"#64748B"}}>LAT</span> <b style={{color:"#22D3EE"}}>{Math.abs(pos.lat||0).toFixed(4)}° {(pos.lat||0)>=0?"N":"S"}</b>
         &nbsp;&nbsp;
-        <span style={{color:"#64748B"}}>LON</span> <b style={{color:"#22D3EE"}}>{Math.abs(pos.lon).toFixed(4)}° {pos.lon>=0?"E":"W"}</b>
+        <span style={{color:"#64748B"}}>LON</span> <b style={{color:"#22D3EE"}}>{Math.abs(pos.lon||0).toFixed(4)}° {(pos.lon||0)>=0?"E":"W"}</b>
       </div>
 
       {/* Nav grid */}
@@ -480,9 +480,9 @@ export function ShipInfoPanel({ pos, weather, shipParams, motions, motionStatus 
           {stat("Roll",motions.roll,"°", motions.roll>=25?"#DC2626":motions.roll>=15?"#D97706":"#22D3EE")}
           {stat("Pitch",motions.pitch,"°", motions.pitch>=8?"#DC2626":motions.pitch>=5?"#D97706":"#22D3EE")}
           {stat("Bridge",motions.bridgeAcc,"m/s²", motions.bridgeAcc>=2.94?"#DC2626":motions.bridgeAcc>=1.96?"#D97706":"#16A34A")}
-          {stat("Slam",motions.slam*100,"%", motions.slam>=0.1?"#EA580C":motions.slam>=0.03?"#D97706":"#16A34A")}
-          {stat("GreenWtr",motions.greenWater*100,"%", motions.greenWater>=0.1?"#EA580C":"#16A34A")}
-          {stat("P.Risk",(motions.paramRisk*100).toFixed(0),"%", motions.paramRisk>=0.7?"#DC2626":motions.paramRisk>=0.4?"#D97706":"#16A34A")}
+          {stat("Slam",(motions.slam??0)*100,"%", (motions.slam||0)>=0.1?"#EA580C":(motions.slam||0)>=0.03?"#D97706":"#16A34A")}
+          {stat("GreenWtr",(motions.greenWater??0)*100,"%", (motions.greenWater||0)>=0.1?"#EA580C":"#16A34A")}
+          {stat("P.Risk",((motions.paramRisk??0)*100).toFixed(0),"%", (motions.paramRisk||0)>=0.7?"#DC2626":(motions.paramRisk||0)>=0.4?"#D97706":"#16A34A")}
         </div>
       </>}
     </div>

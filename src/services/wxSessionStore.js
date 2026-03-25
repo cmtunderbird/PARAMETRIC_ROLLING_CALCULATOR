@@ -2,7 +2,7 @@
 // localStorage is limited to ~5MB — weather grids easily exceed this.
 // IndexedDB has no practical limit in Electron (~50MB+).
 const DB_NAME = "prc_wx_sessions";
-const DB_VERSION = 1;
+const DB_VERSION = 2;  // bumped to flush stale corrupted data from v1
 const STORE = "wx_state";
 const KEY = "current";
 const MAX_AGE_MS = 6 * 3600000; // 6 hours
@@ -14,7 +14,9 @@ function openDB() {
     req.onsuccess = () => resolve(req.result);
     req.onupgradeneeded = (e) => {
       const db = e.target.result;
-      if (!db.objectStoreNames.contains(STORE)) db.createObjectStore(STORE);
+      // Delete and recreate store on version bump to flush stale data
+      if (db.objectStoreNames.contains(STORE)) db.deleteObjectStore(STORE);
+      db.createObjectStore(STORE);
     };
   });
 }

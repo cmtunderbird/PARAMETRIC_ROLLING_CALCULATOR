@@ -96,8 +96,8 @@ function WpPopup({ wp, shipParams }) {
         {wp.motions && <div style={{marginTop:6,borderTop:"1px solid #334155",paddingTop:6}}>
           <div style={{color:wp.motionStatus?.color||"#94A3B8",fontWeight:800}}>{wp.motionStatus?.label||"—"}</div>
           <div>Roll: {wp.motions.roll?.toFixed(1)||"—"}° | Pitch: {wp.motions.pitch?.toFixed(1)||"—"}°</div>
-          <div>Bridge: {wp.motions.bridgeAcc?.toFixed(2)||"—"} m/s² | Slam: {(wp.motions.slam*100).toFixed(0)||"—"}%</div>
-          <div style={{color:"#94A3B8"}}>Param Risk: {(wp.motions.paramRisk*100).toFixed(0)||"—"}%</div>
+          <div>Bridge: {wp.motions.bridgeAcc?.toFixed(2)||"—"} m/s² | Slam: {((wp.motions.slam??0)*100).toFixed(0)}%</div>
+          <div style={{color:"#94A3B8"}}>Param Risk: {((wp.motions.paramRisk??0)*100).toFixed(0)}%</div>
         </div>}
       </> : <div style={{color:"#64748B",fontSize:10}}>No weather data — fetch voyage weather first</div>}
     </div>
@@ -177,13 +177,20 @@ export default function RouteChart({ shipParams }) {
   useEffect(() => {
     loadWxSession().then(saved => {
       if (!saved) return;
-      if (saved.marineGrid) setMarineGrid(saved.marineGrid);
-      if (saved.atmoGrid) setAtmoGrid(saved.atmoGrid);
-      if (saved.physicsGrid) setPhysicsGrid(saved.physicsGrid);
-      if (saved.voyageWeather) setVoyageWeather(saved.voyageWeather);
-      if (saved.voyageWPs) setVoyageWPs(saved.voyageWPs);
-      if (saved.pipelineFamily) setPipelineFamily(saved.pipelineFamily);
-      if (saved.chartHourIdx != null) setChartHourIdx(saved.chartHourIdx);
+      // Validate: voyageWeather points must have valid lat/lon
+      if (saved.voyageWeather?.length) {
+        const valid = saved.voyageWeather.every(p => p && typeof p.lat === "number" && typeof p.lon === "number");
+        if (!valid) { console.warn("[wxRestore] invalid voyageWeather — skipping restore"); return; }
+      }
+      try {
+        if (saved.marineGrid?.results?.length) setMarineGrid(saved.marineGrid);
+        if (saved.atmoGrid?.results?.length) setAtmoGrid(saved.atmoGrid);
+        if (saved.physicsGrid?.results?.length) setPhysicsGrid(saved.physicsGrid);
+        if (saved.voyageWeather?.length) setVoyageWeather(saved.voyageWeather);
+        if (saved.voyageWPs?.length) setVoyageWPs(saved.voyageWPs);
+        if (saved.pipelineFamily) setPipelineFamily(saved.pipelineFamily);
+        if (saved.chartHourIdx != null) setChartHourIdx(saved.chartHourIdx);
+      } catch (e) { console.warn("[wxRestore] error during restore:", e.message); }
     }).catch(() => {});
   }, []); // mount only
 
@@ -558,7 +565,7 @@ export default function RouteChart({ shipParams }) {
         </div>
 
         {/* Polar Diagram — always shown when voyage weather available */}
-        {voyageWeather?.length > 0 && (() => {
+        {voyageWeather?.length > 0 && (() => { try {
           // Compute scrubber-driven position when synoptic chart is loaded
           const firstResult = marineGrid?.results?.find(r => r.times?.length > 0);
           const baseMs = firstResult ? (firstResult.times[0] < 1e12 ? firstResult.times[0] * 1000 : firstResult.times[0]) : null;
@@ -637,7 +644,7 @@ export default function RouteChart({ shipParams }) {
             </div>
           </div>
           );
-        })()}
+        } catch(e) { console.warn("[Polar] render error:", e.message); return null; } })()}
 
         <VoyageRiskTimeline voyageWeather={voyageWeather} voyageWPs={voyageWPs}
           bospDT={bospDT} maxRisk={maxRisk} voyageDaysStr={voyageDaysStr} />
