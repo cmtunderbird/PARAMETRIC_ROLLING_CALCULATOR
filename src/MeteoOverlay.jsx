@@ -362,20 +362,6 @@ function renderAtmoLayer(canvas, cols, rows, cw, ch, atmoResults, bounds, gridRe
   // ── Atmospheric Fronts ──
   const frontChains = detectFronts(pGrid, windPts, mRows, mCols, cw, ch);
 
-  // ── ON-CANVAS DIAGNOSTIC — visible on the map ──
-  ctx.save();
-  ctx.font = "bold 11px monospace";
-  ctx.textAlign = "left";
-  ctx.textBaseline = "top";
-  const diagY = 6;
-  ctx.fillStyle = "rgba(0,0,0,0.75)";
-  ctx.fillRect(4, diagY, 420, 48);
-  ctx.fillStyle = "#22D3EE";
-  ctx.fillText(`ATMO: ${atmoResults.length} pts | wind: ${windPts.length} barbs | H/L: ${centers.length} | fronts: ${frontChains.length}`, 8, diagY + 4);
-  ctx.fillText(`PRES: ${pCount}/${mRows*mCols} cells | ${pMin.toFixed(0)}-${pMax.toFixed(0)} hPa | R=${Math.max(1, Math.min(3, Math.floor(Math.min(mRows, mCols) / 6)))}`, 8, diagY + 18);
-  ctx.fillText(`grid: ${mRows}x${mCols} @ ${gridRes}° | canvas: ${cw}x${ch}px`, 8, diagY + 32);
-  ctx.restore();
-
   // ── Render H/L centers ──
   for (const c of centers) {
     const isH = c.type === "H";
