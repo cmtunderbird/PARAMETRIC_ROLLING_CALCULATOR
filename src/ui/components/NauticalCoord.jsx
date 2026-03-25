@@ -23,6 +23,20 @@ export function formatNauticalLon(deg, min, hemi) {
   return `${String(deg).padStart(3, "0")}°-${min.toFixed(1).padStart(4, "0")}′ ${hemi}`;
 }
 
+// ─── Compact formatters: decimal degrees → nautical string ──────────────────
+// fmtLat(41.9006) → "41°-54.0′ N"
+// fmtLon(-55.9607) → "055°-57.6′ W"
+export function fmtLat(dec) {
+  if (dec == null || !isFinite(dec)) return "—";
+  const { deg, min, hemi } = decimalToNautical(dec, true);
+  return formatNauticalLat(deg, min, hemi);
+}
+export function fmtLon(dec) {
+  if (dec == null || !isFinite(dec)) return "—";
+  const { deg, min, hemi } = decimalToNautical(dec, false);
+  return formatNauticalLon(deg, min, hemi);
+}
+
 const coordFieldStyle = { ...inputStyle, textAlign: "center", padding: "6px 4px" };
 
 export function NauticalCoordInput({

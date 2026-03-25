@@ -1,6 +1,7 @@
 // ─── WaypointEditor — waypoint CRUD table ────────────────────────────────────
 // Extracted from RouteChart.jsx — Phase 1, Item 2
 import { btnSt, inputSt, Panel } from "./shared.jsx";
+import { fmtLat, fmtLon } from "../components/NauticalCoord.jsx";
 
 export default function WaypointEditor({
   route, editMode, setEditMode, editingIdx, setEditingIdx,
@@ -39,7 +40,7 @@ export default function WaypointEditor({
                       whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",
                       fontFamily:"'JetBrains Mono',monospace"}}>{wp.name||`WP${idx+1}`}</div>
                     <div style={{color:"#64748B",fontSize:8,fontFamily:"'JetBrains Mono',monospace"}}>
-                      {(wp.lat||0).toFixed(3)}{"\u00b0"}, {(wp.lon||0).toFixed(3)}{"\u00b0"}</div>
+                      {fmtLat(wp.lat)}<br/>{fmtLon(wp.lon)}</div>
                   </div>
                   <div style={{display:"flex",gap:2,flexShrink:0}}>
                     <button onClick={()=>wpMoveUp(idx)} disabled={idx===0} title="Move up"
@@ -70,7 +71,13 @@ export default function WaypointEditor({
                     </div>
                   </div>
                   <div style={{fontSize:8,color:"#64748B",marginBottom:6,fontFamily:"'JetBrains Mono',monospace"}}>
-                    Decimal degrees {"\u00b7"} N/E positive {"\u00b7"} S/W negative<br/>Or drag the marker on the map to reposition</div>
+                    Decimal degrees {"\u00b7"} N/E positive {"\u00b7"} S/W negative<br/>Or drag the marker on the map to reposition
+                    {!isNaN(parseFloat(editForm.lat)) && !isNaN(parseFloat(editForm.lon)) && (
+                      <div style={{color:"#22D3EE",marginTop:3,fontSize:9}}>
+                        {fmtLat(parseFloat(editForm.lat))} &nbsp; {fmtLon(parseFloat(editForm.lon))}
+                      </div>
+                    )}
+                  </div>
                   <div style={{display:"flex",gap:4}}>
                     <button onClick={()=>wpSaveEdit(idx)} style={{...btnSt,flex:1,padding:"4px",fontSize:10,
                       background:"linear-gradient(90deg,#16A34A,#15803D)",color:"#fff"}}>{"\u2713"} SAVE</button>

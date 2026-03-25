@@ -12,6 +12,7 @@ import L from "leaflet";
 import { G, DEG_TO_RAD, calcEncounterPeriod, calcParametricRollRisk,
          calcSynchronousRiskRatio,
          calcWaveLength, calcMotions, getMotionStatus } from "./physics.js";
+import { fmtLat, fmtLon } from "./ui/components/NauticalCoord.jsx";
 
 // ─── Haversine bearing ────────────────────────────────────────────────────────
 function bearingTo(lat1, lon1, lat2, lon2) {
@@ -134,7 +135,8 @@ function buildPopupHtml(pos, wx) {
   const fmt = v => v != null ? v.toFixed(1) : "—";
   return `<div style="font-family:'JetBrains Mono',monospace;font-size:11px;min-width:190px">
     <div style="font-weight:800;color:#22D3EE;margin-bottom:6px;font-size:13px">⛵ SHIP POSITION</div>
-    <div>Lat: <b>${(pos.lat||0).toFixed(4)}°</b> Lon: <b>${(pos.lon||0).toFixed(4)}°</b></div>
+    <div>${fmtLat(pos.lat)}</div>
+    <div>${fmtLon(pos.lon)}</div>
     <div>Hdg: <b>${(pos.heading||0).toFixed(0)}°T</b> &nbsp;|&nbsp; COG: <b>${(pos.cog||0).toFixed(0)}°T</b></div>
     <div>Dist from BOSP: <b>${(pos.cumNM||0).toFixed(1)} NM</b></div>
     <div>Elapsed: <b>${(pos.elapsed_h||0).toFixed(1)} h</b></div>
@@ -441,9 +443,9 @@ export function ShipInfoPanel({ pos, weather, shipParams, motions, motionStatus 
       {/* Position */}
       <div style={{padding:"6px 8px",background:"#0F172A",borderRadius:4,border:"1px solid #334155",
         fontFamily:"'JetBrains Mono',monospace",fontSize:10,lineHeight:1.8}}>
-        <span style={{color:"#64748B"}}>LAT</span> <b style={{color:"#22D3EE"}}>{Math.abs(pos.lat||0).toFixed(4)}° {(pos.lat||0)>=0?"N":"S"}</b>
+        <span style={{color:"#64748B"}}>LAT</span> <b style={{color:"#22D3EE"}}>{fmtLat(pos.lat)}</b>
         &nbsp;&nbsp;
-        <span style={{color:"#64748B"}}>LON</span> <b style={{color:"#22D3EE"}}>{Math.abs(pos.lon||0).toFixed(4)}° {(pos.lon||0)>=0?"E":"W"}</b>
+        <span style={{color:"#64748B"}}>LON</span> <b style={{color:"#22D3EE"}}>{fmtLon(pos.lon)}</b>
       </div>
 
       {/* Nav grid */}

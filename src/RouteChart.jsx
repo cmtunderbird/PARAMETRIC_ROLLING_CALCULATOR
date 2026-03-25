@@ -31,6 +31,7 @@ import SynopticOverlayPanel from "./ui/route/SynopticOverlayPanel.jsx";
 import VoyageRiskTimeline from "./ui/route/VoyageRiskTimeline.jsx";
 import RouteRiskScan from "./ui/route/RouteRiskScan.jsx";
 import { riskColor, panelBg, btnSt, inputSt, SH, Panel } from "./ui/route/shared.jsx";
+import { fmtLat, fmtLon } from "./ui/components/NauticalCoord.jsx";
 
 delete L.Icon.Default.prototype._getIconUrl;
 L.Icon.Default.mergeOptions({
@@ -69,7 +70,7 @@ function DraggableWpMarker({ wp, idx, onMove }) {
     <Marker ref={markerRef} position={[wp.lat,wp.lon]} icon={icon} draggable={true}
       eventHandlers={{ dragend: e => { const {lat,lng}=e.target.getLatLng(); onMove(idx,parseFloat(lat.toFixed(5)),parseFloat(lng.toFixed(5))); } }}>
       <Tooltip direction="top" offset={[0,-12]}>
-        <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10}}>{wp.name||`WP${idx+1}`}<br/>{(wp.lat||0).toFixed(4)}°, {(wp.lon||0).toFixed(4)}°</span>
+        <span style={{fontFamily:"'JetBrains Mono',monospace",fontSize:10}}>{wp.name||`WP${idx+1}`}<br/>{fmtLat(wp.lat)}<br/>{fmtLon(wp.lon)}</span>
       </Tooltip>
     </Marker>
   );
@@ -611,7 +612,7 @@ export default function RouteChart({ shipParams }) {
                   Tᵣ = {(shipParams?.Tr||14).toFixed(1)}s</div>
               </div>
               <div style={{textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontSize:10}}>
-                <div style={{color:"#22D3EE"}}>Pos: {Math.abs(polarPos.lat||0).toFixed(3)}°{(polarPos.lat||0)>=0?"N":"S"} {Math.abs(polarPos.lon||0).toFixed(3)}°{(polarPos.lon||0)>=0?"E":"W"}</div>
+                <div style={{color:"#22D3EE"}}>{fmtLat(polarPos.lat)} &nbsp; {fmtLon(polarPos.lon)}</div>
                 <div style={{color:"#94A3B8"}}>Hdg: {(polarPos.heading||0).toFixed(0)}°T &nbsp; COG: {(polarPos.cog||0).toFixed(0)}°T</div>
                 {chartTimeMs && <div style={{color:"#F59E0B",fontSize:9}}>+{chartHourIdx}h — {new Date(chartTimeMs).toUTCString().slice(5,22)}</div>}
               </div>
