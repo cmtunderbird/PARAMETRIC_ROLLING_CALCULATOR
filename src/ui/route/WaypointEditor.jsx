@@ -73,11 +73,11 @@ export default function WaypointEditor({
                         <div style={{display:"flex",alignItems:"center",gap:3}}>
                           <input type="number" value={n.deg} min={0} max={90} step={1}
                             onChange={e => update(Math.max(0,Math.min(90,parseInt(e.target.value)||0)), n.min, n.hemi)}
-                            style={{...inputSt,width:"3.2em",textAlign:"center",padding:"4px 4px",fontSize:12}} />
+                            style={{...inputSt,width:"4em",textAlign:"center",padding:"5px 6px",fontSize:13}} />
                           <span style={{color:"#F59E0B",fontSize:12,fontWeight:800}}>°</span>
                           <input type="number" value={n.min} min={0} max={59.9} step={0.1}
                             onChange={e => update(n.deg, Math.max(0,Math.min(59.9,parseFloat(e.target.value)||0)), n.hemi)}
-                            style={{...inputSt,width:"4.2em",textAlign:"center",padding:"4px 4px",fontSize:12}} />
+                            style={{...inputSt,width:"5em",textAlign:"center",padding:"5px 6px",fontSize:13}} />
                           <span style={{color:"#F59E0B",fontSize:10,fontWeight:800}}>′</span>
                           {["N","S"].map(h => (
                             <button key={h} onClick={() => update(n.deg, n.min, h)}
@@ -100,11 +100,11 @@ export default function WaypointEditor({
                         <div style={{display:"flex",alignItems:"center",gap:3}}>
                           <input type="number" value={n.deg} min={0} max={180} step={1}
                             onChange={e => update(Math.max(0,Math.min(180,parseInt(e.target.value)||0)), n.min, n.hemi)}
-                            style={{...inputSt,width:"3.8em",textAlign:"center",padding:"4px 4px",fontSize:12}} />
+                            style={{...inputSt,width:"4.5em",textAlign:"center",padding:"5px 6px",fontSize:13}} />
                           <span style={{color:"#F59E0B",fontSize:12,fontWeight:800}}>°</span>
                           <input type="number" value={n.min} min={0} max={59.9} step={0.1}
                             onChange={e => update(n.deg, Math.max(0,Math.min(59.9,parseFloat(e.target.value)||0)), n.hemi)}
-                            style={{...inputSt,width:"4.2em",textAlign:"center",padding:"4px 4px",fontSize:12}} />
+                            style={{...inputSt,width:"5em",textAlign:"center",padding:"5px 6px",fontSize:13}} />
                           <span style={{color:"#F59E0B",fontSize:10,fontWeight:800}}>′</span>
                           {["E","W"].map(h => (
                             <button key={h} onClick={() => update(n.deg, n.min, h)}
