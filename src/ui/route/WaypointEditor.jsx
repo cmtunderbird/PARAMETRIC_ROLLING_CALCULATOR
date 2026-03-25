@@ -1,7 +1,7 @@
 // ─── WaypointEditor — waypoint CRUD table ────────────────────────────────────
 // Extracted from RouteChart.jsx — Phase 1, Item 2
 import { btnSt, inputSt, Panel } from "./shared.jsx";
-import { fmtLat, fmtLon } from "../components/NauticalCoord.jsx";
+import { fmtLat, fmtLon, decimalToNautical, nauticalToDecimal } from "../components/NauticalCoord.jsx";
 
 export default function WaypointEditor({
   route, editMode, setEditMode, editingIdx, setEditingIdx,
@@ -60,24 +60,64 @@ export default function WaypointEditor({
               ) : (
                 <div style={{background:"#0F172A",borderRadius:4,padding:8,marginBottom:4,border:"1px solid #F59E0B60"}}>
                   <div style={{color:"#F59E0B",fontSize:9,fontWeight:700,marginBottom:6,fontFamily:"'JetBrains Mono',monospace"}}>EDITING WP {idx+1}</div>
-                  <div style={{display:"grid",gridTemplateColumns:"1fr",gap:4,marginBottom:6}}>
-                    <input value={editForm.name} onChange={e=>setEditForm(f=>({...f,name:e.target.value}))}
-                      placeholder="WP name (e.g. BISHOP ROCK)" style={{...inputSt,fontSize:11,padding:"4px 6px"}} />
-                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4}}>
-                      <input value={editForm.lat} onChange={e=>setEditForm(f=>({...f,lat:e.target.value}))}
-                        placeholder="Latitude" style={{...inputSt,fontSize:11,padding:"4px 6px",borderColor:isNaN(parseFloat(editForm.lat))?"#EF4444":"#334155"}} />
-                      <input value={editForm.lon} onChange={e=>setEditForm(f=>({...f,lon:e.target.value}))}
-                        placeholder="Longitude" style={{...inputSt,fontSize:11,padding:"4px 6px",borderColor:isNaN(parseFloat(editForm.lon))?"#EF4444":"#334155"}} />
-                    </div>
-                  </div>
-                  <div style={{fontSize:8,color:"#64748B",marginBottom:6,fontFamily:"'JetBrains Mono',monospace"}}>
-                    Decimal degrees {"\u00b7"} N/E positive {"\u00b7"} S/W negative<br/>Or drag the marker on the map to reposition
-                    {!isNaN(parseFloat(editForm.lat)) && !isNaN(parseFloat(editForm.lon)) && (
-                      <div style={{color:"#22D3EE",marginTop:3,fontSize:9}}>
-                        {fmtLat(parseFloat(editForm.lat))} &nbsp; {fmtLon(parseFloat(editForm.lon))}
+                  <input value={editForm.name} onChange={e=>setEditForm(f=>({...f,name:e.target.value}))}
+                    placeholder="WP name (e.g. BISHOP ROCK)" style={{...inputSt,fontSize:11,padding:"4px 6px",marginBottom:6,width:"100%"}} />
+                  {/* Latitude — DD°-MM.M′ N/S */}
+                  {(() => {
+                    const dec = parseFloat(editForm.lat) || 0;
+                    const n = decimalToNautical(dec, true);
+                    const update = (deg, min, hemi) => setEditForm(f => ({ ...f, lat: String(nauticalToDecimal(deg, min, hemi)) }));
+                    return (
+                      <div style={{marginBottom:4}}>
+                        <div style={{color:"#64748B",fontSize:8,marginBottom:2,fontFamily:"'JetBrains Mono',monospace"}}>LATITUDE (DD°-MM.M′ N/S)</div>
+                        <div style={{display:"flex",alignItems:"center",gap:3}}>
+                          <input type="number" value={n.deg} min={0} max={90} step={1}
+                            onChange={e => update(Math.max(0,Math.min(90,parseInt(e.target.value)||0)), n.min, n.hemi)}
+                            style={{...inputSt,width:"2.5em",textAlign:"center",padding:"4px 2px",fontSize:11}} />
+                          <span style={{color:"#F59E0B",fontSize:12,fontWeight:800}}>°</span>
+                          <input type="number" value={n.min} min={0} max={59.9} step={0.1}
+                            onChange={e => update(n.deg, Math.max(0,Math.min(59.9,parseFloat(e.target.value)||0)), n.hemi)}
+                            style={{...inputSt,width:"3.5em",textAlign:"center",padding:"4px 2px",fontSize:11}} />
+                          <span style={{color:"#F59E0B",fontSize:10,fontWeight:800}}>′</span>
+                          {["N","S"].map(h => (
+                            <button key={h} onClick={() => update(n.deg, n.min, h)}
+                              style={{...btnSt,padding:"3px 7px",fontSize:11,fontWeight:800,minWidth:24,
+                                background:n.hemi===h?"#F59E0B":"#0F172A",color:n.hemi===h?"#0F172A":"#64748B",
+                                border:`1px solid ${n.hemi===h?"#F59E0B":"#334155"}`}}>{h}</button>
+                          ))}
+                        </div>
                       </div>
-                    )}
-                  </div>
+                    );
+                  })()}
+                  {/* Longitude — DDD°-MM.M′ E/W */}
+                  {(() => {
+                    const dec = parseFloat(editForm.lon) || 0;
+                    const n = decimalToNautical(dec, false);
+                    const update = (deg, min, hemi) => setEditForm(f => ({ ...f, lon: String(nauticalToDecimal(deg, min, hemi)) }));
+                    return (
+                      <div style={{marginBottom:6}}>
+                        <div style={{color:"#64748B",fontSize:8,marginBottom:2,fontFamily:"'JetBrains Mono',monospace"}}>LONGITUDE (DDD°-MM.M′ E/W)</div>
+                        <div style={{display:"flex",alignItems:"center",gap:3}}>
+                          <input type="number" value={n.deg} min={0} max={180} step={1}
+                            onChange={e => update(Math.max(0,Math.min(180,parseInt(e.target.value)||0)), n.min, n.hemi)}
+                            style={{...inputSt,width:"3em",textAlign:"center",padding:"4px 2px",fontSize:11}} />
+                          <span style={{color:"#F59E0B",fontSize:12,fontWeight:800}}>°</span>
+                          <input type="number" value={n.min} min={0} max={59.9} step={0.1}
+                            onChange={e => update(n.deg, Math.max(0,Math.min(59.9,parseFloat(e.target.value)||0)), n.hemi)}
+                            style={{...inputSt,width:"3.5em",textAlign:"center",padding:"4px 2px",fontSize:11}} />
+                          <span style={{color:"#F59E0B",fontSize:10,fontWeight:800}}>′</span>
+                          {["E","W"].map(h => (
+                            <button key={h} onClick={() => update(n.deg, n.min, h)}
+                              style={{...btnSt,padding:"3px 7px",fontSize:11,fontWeight:800,minWidth:24,
+                                background:n.hemi===h?"#F59E0B":"#0F172A",color:n.hemi===h?"#0F172A":"#64748B",
+                                border:`1px solid ${n.hemi===h?"#F59E0B":"#334155"}`}}>{h}</button>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  <div style={{fontSize:8,color:"#475569",marginBottom:6,fontFamily:"'JetBrains Mono',monospace"}}>
+                    Or drag the marker on the map to reposition</div>
                   <div style={{display:"flex",gap:4}}>
                     <button onClick={()=>wpSaveEdit(idx)} style={{...btnSt,flex:1,padding:"4px",fontSize:10,
                       background:"linear-gradient(90deg,#16A34A,#15803D)",color:"#fff"}}>{"\u2713"} SAVE</button>
