@@ -195,6 +195,126 @@ function renderSynopticImage(marineGrid, mode, shipParams, hourIdx) {
   return { canvas, cols, rows, cw, ch };
 }
 
+
+// ─── H/L Pressure Center Detection ─────────────────────────────────────────
+// Scans pressure grid for local maxima (H) and minima (L) within a radius
+function findPressureCenters(pGrid, mRows, mCols, gridRes, bounds, cw, ch) {
+  // Adaptive radius: smaller for coarse grids, larger for fine grids
+  const R = Math.max(1, Math.min(3, Math.floor(Math.min(mRows, mCols) / 6)));
+  const centers = [];
+  const { south, north, west, east } = bounds;
+  for (let r = R; r < mRows - R; r++) {
+    for (let c = R; c < mCols - R; c++) {
+      const v = pGrid[r][c];
+      if (v == null) continue;
+      let isMax = true, isMin = true;
+      for (let dr = -R; dr <= R && (isMax || isMin); dr++) {
+        for (let dc = -R; dc <= R && (isMax || isMin); dc++) {
+          if (!dr && !dc) continue;
+          const nb = pGrid[r + dr]?.[c + dc];
+          if (nb == null) continue;
+          if (nb >= v) isMax = false;
+          if (nb <= v) isMin = false;
+        }
+      }
+      if (isMax || isMin) {
+        const px = (c / (mCols - 1)) * cw;
+        const py = (r / (mRows - 1)) * ch;
+        centers.push({ type: isMax ? "H" : "L", px, py, pressure: v });
+      }
+    }
+  }
+  // Deduplicate — keep strongest within 80px
+  const deduped = [];
+  for (const c of centers) {
+    const near = deduped.find(d => d.type === c.type && Math.hypot(d.px - c.px, d.py - c.py) < 80);
+    if (near) {
+      if ((c.type === "H" && c.pressure > near.pressure) ||
+          (c.type === "L" && c.pressure < near.pressure)) {
+        Object.assign(near, c);
+      }
+    } else {
+      deduped.push({ ...c });
+    }
+  }
+  return deduped;
+}
+
+// ─── Atmospheric Front Detection ────────────────────────────────────────────
+// Detects fronts from wind direction convergence + pressure trough lines.
+// Cold front: sharp wind veer (clockwise shift), tight isobar packing.
+// Warm front: gradual wind back (counter-clockwise shift), wider spacing.
+function detectFronts(pGrid, windPts, mRows, mCols, cw, ch) {
+  const fronts = [];
+  if (windPts.length < 8) return fronts;
+
+  // Build a coarse wind direction grid for convergence analysis
+  const cellW = cw / 12, cellH = ch / 10;
+  const wGrid = Array.from({ length: 10 }, () => Array(12).fill(null));
+  const sGrid = Array.from({ length: 10 }, () => Array(12).fill(null));
+  for (const wp of windPts) {
+    const gc = Math.floor(wp.px / cellW);
+    const gr = Math.floor(wp.py / cellH);
+    if (gc >= 0 && gc < 12 && gr >= 0 && gr < 10) {
+      wGrid[gr][gc] = wp.wd;
+      sGrid[gr][gc] = wp.ws;
+    }
+  }
+
+  // Detect wind direction convergence zones (sharp direction changes)
+  for (let r = 1; r < 9; r++) {
+    for (let c = 1; c < 11; c++) {
+      const d0 = wGrid[r][c], d1 = wGrid[r][c + 1], d2 = wGrid[r][c - 1];
+      const d3 = wGrid[r - 1][c], d4 = wGrid[r + 1][c];
+      if (d0 == null) continue;
+      // Check horizontal wind shift
+      const shifts = [];
+      if (d1 != null) shifts.push(((d1 - d0 + 540) % 360) - 180);
+      if (d2 != null) shifts.push(((d0 - d2 + 540) % 360) - 180);
+      if (d3 != null) shifts.push(((d0 - d3 + 540) % 360) - 180);
+      if (d4 != null) shifts.push(((d4 - d0 + 540) % 360) - 180);
+      if (!shifts.length) continue;
+      const maxShift = Math.max(...shifts.map(Math.abs));
+      const avgShift = shifts.reduce((a, b) => a + b, 0) / shifts.length;
+      if (maxShift > 25) {
+        const px = (c + 0.5) * cellW;
+        const py = (r + 0.5) * cellH;
+        // Positive avg shift = veering (clockwise) = cold front
+        // Negative avg shift = backing (counter-clockwise) = warm front
+        const type = avgShift > 0 ? "cold" : "warm";
+        fronts.push({ type, px, py, shift: maxShift, avgShift });
+      }
+    }
+  }
+
+  // Chain nearby front points into lines
+  const chains = [];
+  const used = new Set();
+  for (let i = 0; i < fronts.length; i++) {
+    if (used.has(i)) continue;
+    const chain = [fronts[i]];
+    used.add(i);
+    let extended = true;
+    while (extended) {
+      extended = false;
+      const last = chain[chain.length - 1];
+      for (let j = 0; j < fronts.length; j++) {
+        if (used.has(j)) continue;
+        if (fronts[j].type !== chain[0].type) continue;
+        const dist = Math.hypot(fronts[j].px - last.px, fronts[j].py - last.py);
+        if (dist < cellW * 3.5) {
+          chain.push(fronts[j]);
+          used.add(j);
+          extended = true;
+          break;
+        }
+      }
+    }
+    if (chain.length >= 2) chains.push(chain);
+  }
+  return chains;
+}
+
 // ── Layer 3: Isobars + Wind Barbs ─────────────────────────────────────────────
 // Renders onto the marine canvas using direct lat/lon → pixel mapping
 // (independent of marine grid resolution)
@@ -236,11 +356,11 @@ function renderAtmoLayer(canvas, cols, rows, cw, ch, atmoResults, bounds, gridRe
   }
   fillNulls(pGrid, mRows, mCols);
 
-  // Count non-null pressure values and check data quality
-  let pCount = 0, pMin = Infinity, pMax = -Infinity;
-  for (let r = 0; r < mRows; r++) for (let c = 0; c < mCols; c++) {
-    if (pGrid[r][c] != null) { pCount++; pMin = Math.min(pMin, pGrid[r][c]); pMax = Math.max(pMax, pGrid[r][c]); }
-  }
+  // ── H/L Pressure Centers ──
+  const centers = findPressureCenters(pGrid, mRows, mCols, gridRes, bounds, cw, ch);
+
+  // ── Atmospheric Fronts ──
+  const frontChains = detectFronts(pGrid, windPts, mRows, mCols, cw, ch);
 
   // ── ON-CANVAS DIAGNOSTIC — visible on the map ──
   ctx.save();
@@ -249,12 +369,92 @@ function renderAtmoLayer(canvas, cols, rows, cw, ch, atmoResults, bounds, gridRe
   ctx.textBaseline = "top";
   const diagY = 6;
   ctx.fillStyle = "rgba(0,0,0,0.75)";
-  ctx.fillRect(4, diagY, 360, 48);
+  ctx.fillRect(4, diagY, 420, 48);
   ctx.fillStyle = "#22D3EE";
-  ctx.fillText(`ATMO: ${atmoResults.length} pts | wind: ${windPts.length} barbs`, 8, diagY + 4);
-  ctx.fillText(`PRES: ${pCount}/${mRows*mCols} cells | ${pMin.toFixed(0)}-${pMax.toFixed(0)} hPa`, 8, diagY + 18);
+  ctx.fillText(`ATMO: ${atmoResults.length} pts | wind: ${windPts.length} barbs | H/L: ${centers.length} | fronts: ${frontChains.length}`, 8, diagY + 4);
+  ctx.fillText(`PRES: ${pCount}/${mRows*mCols} cells | ${pMin.toFixed(0)}-${pMax.toFixed(0)} hPa | R=${Math.max(1, Math.min(3, Math.floor(Math.min(mRows, mCols) / 6)))}`, 8, diagY + 18);
   ctx.fillText(`grid: ${mRows}x${mCols} @ ${gridRes}° | canvas: ${cw}x${ch}px`, 8, diagY + 32);
   ctx.restore();
+
+  // ── Render H/L centers ──
+  for (const c of centers) {
+    const isH = c.type === "H";
+    const color = isH ? "rgba(0,100,255,0.95)" : "rgba(220,38,38,0.95)";
+    const bgColor = isH ? "rgba(0,100,255,0.15)" : "rgba(220,38,38,0.15)";
+    // Filled circle background
+    ctx.beginPath();
+    ctx.arc(c.px, c.py, 22, 0, Math.PI * 2);
+    ctx.fillStyle = bgColor;
+    ctx.fill();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2.5;
+    ctx.stroke();
+    // H or L letter
+    ctx.font = "bold 22px sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "middle";
+    ctx.fillStyle = color;
+    ctx.fillText(c.type, c.px, c.py);
+    // Pressure value below
+    ctx.font = "bold 9px sans-serif";
+    ctx.fillStyle = "rgba(0,0,0,0.7)";
+    ctx.fillRect(c.px - 16, c.py + 24, 32, 12);
+    ctx.fillStyle = color;
+    ctx.fillText(c.pressure.toFixed(0), c.px, c.py + 30);
+  }
+
+  // ── Render Atmospheric Fronts ──
+  for (const chain of frontChains) {
+    const isCold = chain[0].type === "cold";
+    ctx.beginPath();
+    ctx.moveTo(chain[0].px, chain[0].py);
+    for (let i = 1; i < chain.length; i++) {
+      ctx.lineTo(chain[i].px, chain[i].py);
+    }
+    ctx.strokeStyle = isCold ? "rgba(0,100,255,0.85)" : "rgba(220,38,38,0.85)";
+    ctx.lineWidth = 3;
+    ctx.setLineDash([]);
+    ctx.stroke();
+    // Draw symbols along the front line
+    const symbolSpacing = 40;
+    for (let i = 0; i < chain.length - 1; i++) {
+      const a = chain[i], b = chain[i + 1];
+      const dist = Math.hypot(b.px - a.px, b.py - a.py);
+      const nSymbols = Math.max(1, Math.floor(dist / symbolSpacing));
+      const ang = Math.atan2(b.py - a.py, b.px - a.px);
+      // Perpendicular direction for triangles/semicircles (to the right of travel)
+      const perpAng = ang + Math.PI / 2;
+      for (let s = 0; s < nSymbols; s++) {
+        const t = (s + 0.5) / nSymbols;
+        const sx = a.px + (b.px - a.px) * t;
+        const sy = a.py + (b.py - a.py) * t;
+        if (isCold) {
+          // Cold front: blue triangles pointing in direction of movement
+          const sz = 8;
+          const tx = sx + Math.cos(perpAng) * sz;
+          const ty = sy + Math.sin(perpAng) * sz;
+          const lx = sx + Math.cos(ang + Math.PI * 0.8) * sz * 0.6;
+          const ly = sy + Math.sin(ang + Math.PI * 0.8) * sz * 0.6;
+          const rx = sx + Math.cos(ang - Math.PI * 0.8) * sz * 0.6;
+          const ry = sy + Math.sin(ang - Math.PI * 0.8) * sz * 0.6;
+          ctx.beginPath();
+          ctx.moveTo(tx, ty);
+          ctx.lineTo(lx, ly);
+          ctx.lineTo(rx, ry);
+          ctx.closePath();
+          ctx.fillStyle = "rgba(0,100,255,0.85)";
+          ctx.fill();
+        } else {
+          // Warm front: red semicircles pointing in direction of movement
+          const sz = 7;
+          ctx.beginPath();
+          ctx.arc(sx, sy, sz, perpAng - Math.PI / 2, perpAng + Math.PI / 2);
+          ctx.fillStyle = "rgba(220,38,38,0.85)";
+          ctx.fill();
+        }
+      }
+    }
+  }
 
   // Isobars every 4 hPa (960–1044)
   const pLevels = [];
@@ -346,29 +546,12 @@ export default function MeteoCanvasOverlay({ marineGrid, atmoGrid, physicsGrid, 
     const { canvas, cols, rows, cw, ch } = renderSynopticImage(marineGrid, mode, shipParams, hourIdx);
     // All layers map onto the MARINE canvas — use marineGrid.bounds for pixel coords
     const canvasBounds = marineGrid.bounds;
-    console.log("[MeteoOverlay] canvas:", cw, "x", ch, "marine pts:", marineGrid.results.length,
-      "atmo pts:", atmoGrid?.results?.length || 0, "phys pts:", physicsGrid?.results?.length || 0);
     if (atmoGrid?.results?.length) {
       const aRes = atmoGrid.gridRes || marineGrid.gridRes;
-      // Debug: check first atmo point data
-      const sample = atmoGrid.results[0];
-      console.log("[MeteoOverlay] atmo sample:", {
-        lat: sample.lat, lon: sample.lon,
-        hasTimes: !!sample.times, timesLen: sample.times?.length,
-        hasWindKts: !!sample.windKts, windKtsLen: sample.windKts?.length,
-        firstWindKts: sample.windKts?.[0], firstWindDir: sample.windDir?.[0],
-        hasMslp: !!sample.mslp, firstMslp: sample.mslp?.[0],
-        aRes, hourIdx
-      });
       renderAtmoLayer(canvas, 0, 0, cw, ch, atmoGrid.results, canvasBounds, aRes, hourIdx);
     }
     if (physicsGrid?.results?.length) {
       const pRes = physicsGrid.gridRes || marineGrid.gridRes;
-      const sample = physicsGrid.results[0];
-      console.log("[MeteoOverlay] physics sample:", {
-        lat: sample.lat, lon: sample.lon,
-        firstSpeed: sample.currentSpeed?.[0], firstDir: sample.currentDir?.[0]
-      });
       renderCurrentsLayer(canvas, 0, 0, cw, ch, physicsGrid.results, canvasBounds, pRes, hourIdx);
     }
 

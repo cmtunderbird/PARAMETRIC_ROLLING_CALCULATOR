@@ -462,18 +462,6 @@ export default function RouteChart({ shipParams }) {
           gridError={gridError} marineGrid={marineGrid} maxHourIdx={maxHourIdx}
           lastFetchSrc={lastFetchSrc} cacheInfo={cacheInfo} setCacheInfo={setCacheInfo} />
 
-        {/* Overlay layer diagnostics — shows data presence for each layer */}
-        {marineGrid && <div style={{padding:"6px 10px",background:"#0F172A",borderRadius:6,border:"1px solid #334155",fontSize:9,fontFamily:"'JetBrains Mono',monospace",lineHeight:1.7}}>
-          <div style={{color:"#64748B",fontWeight:700,marginBottom:2}}>Layer Data</div>
-          <div><span style={{color:"#64748B"}}>Marine:</span> <span style={{color:"#22C55E"}}>{marineGrid.results?.length || 0} pts ({marineGrid.gridRes}°)</span></div>
-          <div><span style={{color:"#64748B"}}>Atmo:</span> <span style={{color:atmoGrid?.results?.length?"#22C55E":"#EF4444"}}>{atmoGrid?.results?.length || "NONE"}{atmoGrid?.gridRes ? ` (${atmoGrid.gridRes}°)` : ""}</span>
-            {atmoGrid?.results?.[0] && <span style={{color:"#475569"}}> · wind: {atmoGrid.results[0].windKts?.[0]??'null'}kts · mslp: {atmoGrid.results[0].mslp?.[0]??'null'}hPa</span>}
-          </div>
-          <div><span style={{color:"#64748B"}}>Currents:</span> <span style={{color:physicsGrid?.results?.length?"#22D3EE":"#64748B"}}>{physicsGrid?.results?.length || (showCurrents?"NONE":"off")}</span></div>
-          <div><span style={{color:"#64748B"}}>showAtmo:</span> <span style={{color:showAtmo?"#22C55E":"#EF4444"}}>{showAtmo?"ON":"OFF"}</span>
-            <span style={{color:"#64748B",marginLeft:8}}>showGrid:</span> <span style={{color:showGrid?"#22C55E":"#EF4444"}}>{showGrid?"ON":"OFF"}</span></div>
-        </div>}
-
         {/* WP ETA table */}
         {voyageWPs && <Panel style={{maxHeight:280,overflowY:"auto"}}>
           {SH("Waypoint ETAs")}
