@@ -168,14 +168,17 @@ export default function RouteChart({ shipParams }) {
       setFileName(appState.lastRoute.fileName || "Restored route");
       if (appState.lastRoute.bospDT) setBospDT(appState.lastRoute.bospDT);
       if (appState.lastRoute.voyageSpeed) setVoyageSpeed(appState.lastRoute.voyageSpeed);
+      if (appState.lastRoute.bospIdx != null) setBospIdx(appState.lastRoute.bospIdx);
+      if (appState.lastRoute.eospIdx != null) setEospIdx(appState.lastRoute.eospIdx);
+      if (appState.lastRoute.legSpeeds) setLegSpeeds(appState.lastRoute.legSpeeds);
     }
   }, []); // mount only
 
   useEffect(() => {
     if (route?.waypoints?.length) {
-      appActions.setLastRoute({ route, fileName, bospDT, voyageSpeed });
+      appActions.setLastRoute({ route, fileName, bospDT, voyageSpeed, bospIdx, eospIdx, legSpeeds });
     }
-  }, [route, fileName, bospDT, voyageSpeed]);
+  }, [route, fileName, bospDT, voyageSpeed, bospIdx, eospIdx, legSpeeds]);
 
   // ── Restore weather state on mount (IndexedDB — survives tab switch + restart) ──
   useEffect(() => {
