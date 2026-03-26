@@ -357,110 +357,58 @@ export function ShipPolarDiagram({ pos, weather, shipParams }) {
         {/* ── Outer ring ── */}
         <circle cx={CX} cy={CY} r={MAX_R} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="1"/>
 
-        {/* ── BVS-style arrows OUTSIDE polar ring ── */}
-        {/* Each arrow: thick coloured line from outside pointing inward + large triangle tip */}
+        {/* ── Sea / Swell / Current / Wind — solid triangles outside ring ── */}
         {weather?.waveDir != null && (() => {
-          const dir = waveDir;
-          const a = dir * DEG_TO_RAD - Math.PI/2;
-          const tipR = MAX_R + 2;   // arrowhead touches the ring
-          const tailR = MAX_R + 50; // tail extends well outside
-          const tipX = CX + tipR * Math.cos(a), tipY = CY + tipR * Math.sin(a);
-          const tailX = CX + tailR * Math.cos(a), tailY = CY + tailR * Math.sin(a);
-          // Triangle arrowhead: wide, pointing inward
-          const hw = 10; // half-width of arrowhead base
-          const perp = a + Math.PI/2;
-          const baseR = MAX_R + 16;
-          const b1x = CX + baseR * Math.cos(a) + hw * Math.cos(perp);
-          const b1y = CY + baseR * Math.sin(a) + hw * Math.sin(perp);
-          const b2x = CX + baseR * Math.cos(a) - hw * Math.cos(perp);
-          const b2y = CY + baseR * Math.sin(a) - hw * Math.sin(perp);
+          const a = waveDir * DEG_TO_RAD - Math.PI/2;
+          const p = a + Math.PI/2; // perpendicular
+          const tipR = MAX_R + 3;
+          const baseR = MAX_R + 28;
+          const hw = 12;
           return <g>
-            <line x1={tailX} y1={tailY} x2={CX + baseR*Math.cos(a)} y2={CY + baseR*Math.sin(a)}
-              stroke="#EF4444" strokeWidth="3.5" strokeLinecap="round"/>
-            <polygon points={`${tipX},${tipY} ${b1x},${b1y} ${b2x},${b2y}`}
-              fill="#EF4444" stroke="#000" strokeWidth="0.5"/>
-            <text x={CX + (tailR+10)*Math.cos(a)} y={CY + (tailR+10)*Math.sin(a)}
-              textAnchor="middle" dominantBaseline="middle"
-              style={{fontSize:8,fontWeight:800,fill:"#EF4444",fontFamily:"'JetBrains Mono',monospace"}}>
-              Sig {weather.waveHeight?.toFixed(1)||""}m</text>
+            <polygon points={`${CX+tipR*Math.cos(a)},${CY+tipR*Math.sin(a)} ${CX+baseR*Math.cos(a)+hw*Math.cos(p)},${CY+baseR*Math.sin(a)+hw*Math.sin(p)} ${CX+baseR*Math.cos(a)-hw*Math.cos(p)},${CY+baseR*Math.sin(a)-hw*Math.sin(p)}`}
+              fill="#EF4444" stroke="#000" strokeWidth="1"/>
+            <text x={CX+(baseR+16)*Math.cos(a)} y={CY+(baseR+16)*Math.sin(a)} textAnchor="middle" dominantBaseline="middle"
+              style={{fontSize:8,fontWeight:800,fill:"#EF4444",fontFamily:"'JetBrains Mono',monospace"}}>Sig {weather.waveHeight?.toFixed(1)||""}m</text>
           </g>;
         })()}
-
         {weather?.swellDir != null && (weather?.swellHeight||0) > 0.1 && (() => {
-          const dir = swellDir;
-          const a = dir * DEG_TO_RAD - Math.PI/2;
-          const tipR = MAX_R + 2;
-          const tailR = MAX_R + 45;
-          const tipX = CX + tipR * Math.cos(a), tipY = CY + tipR * Math.sin(a);
-          const tailX = CX + tailR * Math.cos(a), tailY = CY + tailR * Math.sin(a);
-          const hw = 8;
-          const perp = a + Math.PI/2;
-          const baseR = MAX_R + 14;
-          const b1x = CX + baseR * Math.cos(a) + hw * Math.cos(perp);
-          const b1y = CY + baseR * Math.sin(a) + hw * Math.sin(perp);
-          const b2x = CX + baseR * Math.cos(a) - hw * Math.cos(perp);
-          const b2y = CY + baseR * Math.sin(a) - hw * Math.sin(perp);
+          const a = swellDir * DEG_TO_RAD - Math.PI/2;
+          const p = a + Math.PI/2;
+          const tipR = MAX_R + 3;
+          const baseR = MAX_R + 24;
+          const hw = 10;
           return <g>
-            <line x1={tailX} y1={tailY} x2={CX + baseR*Math.cos(a)} y2={CY + baseR*Math.sin(a)}
-              stroke="#22C55E" strokeWidth="3" strokeLinecap="round" strokeDasharray="6,3"/>
-            <polygon points={`${tipX},${tipY} ${b1x},${b1y} ${b2x},${b2y}`}
-              fill="#22C55E" stroke="#000" strokeWidth="0.5"/>
-            <text x={CX + (tailR+10)*Math.cos(a)} y={CY + (tailR+10)*Math.sin(a)}
-              textAnchor="middle" dominantBaseline="middle"
-              style={{fontSize:8,fontWeight:800,fill:"#22C55E",fontFamily:"'JetBrains Mono',monospace"}}>
-              Swl {weather.swellHeight?.toFixed(1)||""}m</text>
+            <polygon points={`${CX+tipR*Math.cos(a)},${CY+tipR*Math.sin(a)} ${CX+baseR*Math.cos(a)+hw*Math.cos(p)},${CY+baseR*Math.sin(a)+hw*Math.sin(p)} ${CX+baseR*Math.cos(a)-hw*Math.cos(p)},${CY+baseR*Math.sin(a)-hw*Math.sin(p)}`}
+              fill="#22C55E" stroke="#000" strokeWidth="1"/>
+            <text x={CX+(baseR+14)*Math.cos(a)} y={CY+(baseR+14)*Math.sin(a)} textAnchor="middle" dominantBaseline="middle"
+              style={{fontSize:8,fontWeight:800,fill:"#22C55E",fontFamily:"'JetBrains Mono',monospace"}}>Swl {weather.swellHeight?.toFixed(1)||""}m</text>
           </g>;
         })()}
-
         {(weather?.currentSpeed||0) > 0.05 && (() => {
           const dir = weather.currentDir ?? 0;
           const a = dir * DEG_TO_RAD - Math.PI/2;
-          const tipR = MAX_R + 2;
-          const tailR = MAX_R + 40;
-          const tipX = CX + tipR * Math.cos(a), tipY = CY + tipR * Math.sin(a);
-          const tailX = CX + tailR * Math.cos(a), tailY = CY + tailR * Math.sin(a);
-          const hw = 7;
-          const perp = a + Math.PI/2;
-          const baseR = MAX_R + 13;
-          const b1x = CX + baseR * Math.cos(a) + hw * Math.cos(perp);
-          const b1y = CY + baseR * Math.sin(a) + hw * Math.sin(perp);
-          const b2x = CX + baseR * Math.cos(a) - hw * Math.cos(perp);
-          const b2y = CY + baseR * Math.sin(a) - hw * Math.sin(perp);
+          const p = a + Math.PI/2;
+          const tipR = MAX_R + 3;
+          const baseR = MAX_R + 22;
+          const hw = 9;
           return <g>
-            <line x1={tailX} y1={tailY} x2={CX + baseR*Math.cos(a)} y2={CY + baseR*Math.sin(a)}
-              stroke="#FACC15" strokeWidth="4" strokeLinecap="round"/>
-            <polygon points={`${tipX},${tipY} ${b1x},${b1y} ${b2x},${b2y}`}
-              fill="#FACC15" stroke="#000" strokeWidth="0.5"/>
-            <text x={CX + (tailR+10)*Math.cos(a)} y={CY + (tailR+10)*Math.sin(a)}
-              textAnchor="middle" dominantBaseline="middle"
-              style={{fontSize:8,fontWeight:800,fill:"#FACC15",fontFamily:"'JetBrains Mono',monospace"}}>
-              Cur {weather.currentSpeed?.toFixed(1)||""}kt</text>
+            <polygon points={`${CX+tipR*Math.cos(a)},${CY+tipR*Math.sin(a)} ${CX+baseR*Math.cos(a)+hw*Math.cos(p)},${CY+baseR*Math.sin(a)+hw*Math.sin(p)} ${CX+baseR*Math.cos(a)-hw*Math.cos(p)},${CY+baseR*Math.sin(a)-hw*Math.sin(p)}`}
+              fill="#FACC15" stroke="#000" strokeWidth="1"/>
+            <text x={CX+(baseR+14)*Math.cos(a)} y={CY+(baseR+14)*Math.sin(a)} textAnchor="middle" dominantBaseline="middle"
+              style={{fontSize:7,fontWeight:800,fill:"#FACC15",fontFamily:"'JetBrains Mono',monospace"}}>Cur {weather.currentSpeed?.toFixed(1)||""}kt</text>
           </g>;
         })()}
-
         {weather?.windDir != null && (() => {
-          const dir = windDir;
-          const a = dir * DEG_TO_RAD - Math.PI/2;
-          const tipR = MAX_R + 4;
-          const tailR = MAX_R + 42;
-          const tipX = CX + tipR * Math.cos(a), tipY = CY + tipR * Math.sin(a);
-          const tailX = CX + tailR * Math.cos(a), tailY = CY + tailR * Math.sin(a);
-          const hw = 6;
-          const perp = a + Math.PI/2;
-          const baseR = MAX_R + 14;
-          const b1x = CX + baseR * Math.cos(a) + hw * Math.cos(perp);
-          const b1y = CY + baseR * Math.sin(a) + hw * Math.sin(perp);
-          const b2x = CX + baseR * Math.cos(a) - hw * Math.cos(perp);
-          const b2y = CY + baseR * Math.sin(a) - hw * Math.sin(perp);
+          const a = windDir * DEG_TO_RAD - Math.PI/2;
+          const p = a + Math.PI/2;
+          const tipR = MAX_R + 5;
+          const baseR = MAX_R + 22;
+          const hw = 7;
           return <g>
-            <line x1={tailX} y1={tailY} x2={CX + baseR*Math.cos(a)} y2={CY + baseR*Math.sin(a)}
-              stroke="#CBD5E1" strokeWidth="2" strokeLinecap="round" strokeDasharray="4,3"/>
-            <polygon points={`${tipX},${tipY} ${b1x},${b1y} ${b2x},${b2y}`}
-              fill="#CBD5E1" stroke="#000" strokeWidth="0.5"/>
-            <text x={CX + (tailR+10)*Math.cos(a)} y={CY + (tailR+10)*Math.sin(a)}
-              textAnchor="middle" dominantBaseline="middle"
-              style={{fontSize:7,fontWeight:700,fill:"#CBD5E1",fontFamily:"'JetBrains Mono',monospace"}}>
-              Wnd {weather.windKts?.toFixed(0)||""}kt</text>
+            <polygon points={`${CX+tipR*Math.cos(a)},${CY+tipR*Math.sin(a)} ${CX+baseR*Math.cos(a)+hw*Math.cos(p)},${CY+baseR*Math.sin(a)+hw*Math.sin(p)} ${CX+baseR*Math.cos(a)-hw*Math.cos(p)},${CY+baseR*Math.sin(a)-hw*Math.sin(p)}`}
+              fill="#CBD5E1" stroke="#000" strokeWidth="0.8"/>
+            <text x={CX+(baseR+12)*Math.cos(a)} y={CY+(baseR+12)*Math.sin(a)} textAnchor="middle" dominantBaseline="middle"
+              style={{fontSize:7,fontWeight:700,fill:"#CBD5E1",fontFamily:"'JetBrains Mono',monospace"}}>Wnd {weather.windKts?.toFixed(0)||""}kt</text>
           </g>;
         })()}
 
