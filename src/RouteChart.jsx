@@ -399,7 +399,7 @@ export default function RouteChart({ shipParams }) {
   return (
     <div style={{display:"grid",gridTemplateColumns:"310px 1fr",gap:16,minHeight:650}}>
       {/* ═══ LEFT PANEL ═══ */}
-      <div style={{display:"flex",flexDirection:"column",gap:12,overflowY:"auto",maxHeight:"85vh"}}>
+      <div style={{display:"flex",flexDirection:"column",gap:12,overflowY:"auto",maxHeight:"calc(100vh - 100px)"}}>
         {/* Route Import */}
         <Panel>
           {SH("Route Import")}
