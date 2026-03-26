@@ -651,11 +651,11 @@ export default function RouteChart({ shipParams }) {
 
                 {/* Sea / Swell / Wind / Current */}
                 <div style={{background:"#0F172A",borderRadius:6,border:"1px solid #334155",overflow:"hidden"}}>
-                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,fontFamily:"'JetBrains Mono',monospace"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,fontFamily:"'JetBrains Mono',monospace",tableLayout:"fixed"}}>
                     <thead><tr style={{background:"#1E293B"}}>
-                      <th style={{padding:"4px 8px",textAlign:"left",color:"#64748B",fontSize:9}}></th>
-                      <th style={{padding:"4px 8px",textAlign:"right",color:"#EF4444",fontSize:9,fontWeight:700}}>SEA</th>
-                      <th style={{padding:"4px 8px",textAlign:"right",color:"#22C55E",fontSize:9,fontWeight:700}}>SWELL</th>
+                      <th style={{padding:"4px 8px",textAlign:"left",color:"#64748B",fontSize:9,width:"40%"}}></th>
+                      <th style={{padding:"4px 8px",textAlign:"right",color:"#EF4444",fontSize:9,fontWeight:700,width:"30%"}}>SEA</th>
+                      <th style={{padding:"4px 8px",textAlign:"right",color:"#22C55E",fontSize:9,fontWeight:700,width:"30%"}}>SWELL</th>
                     </tr></thead>
                     <tbody>
                       <tr style={{borderBottom:"1px solid #1E293B"}}><td style={{padding:"3px 8px",color:"#64748B"}}>Hs (m)</td>
@@ -669,8 +669,8 @@ export default function RouteChart({ shipParams }) {
                         <td style={{padding:"3px 8px",textAlign:"right",color:"#22C55E",fontWeight:700}}>{polarWx?.swellPeriod?.toFixed(1)||"\u2014"}</td></tr>
                       <tr style={{borderBottom:"1px solid #1E293B"}}><td style={{padding:"3px 8px",color:"#64748B"}}>Wind</td>
                         <td colSpan={2} style={{padding:"3px 8px",textAlign:"right",color:"#E2E8F0",fontWeight:700}}>{polarWx?.windKts?.toFixed(0)||"\u2014"} kts from {polarWx?.windDir?.toFixed(0)||"\u2014"}°T</td></tr>
-                      {polarWx?.currentSpeed > 0 && <tr><td style={{padding:"3px 8px",color:"#64748B"}}>Current</td>
-                        <td colSpan={2} style={{padding:"3px 8px",textAlign:"right",color:"#FACC15",fontWeight:700}}>{polarWx.currentSpeed?.toFixed(1)||"\u2014"} kts → {polarWx.currentDir?.toFixed(0)||"\u2014"}°T</td></tr>}
+                      <tr><td style={{padding:"3px 8px",color:"#64748B"}}>Current</td>
+                        <td colSpan={2} style={{padding:"3px 8px",textAlign:"right",color:"#FACC15",fontWeight:700}}>{polarWx?.currentSpeed?.toFixed(1)||"\u2014"} kts → {polarWx?.currentDir?.toFixed(0)||"\u2014"}°T</td></tr>
                     </tbody>
                   </table>
                 </div>
