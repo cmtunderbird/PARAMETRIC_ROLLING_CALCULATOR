@@ -360,9 +360,9 @@ export function ShipPolarDiagram({ pos, weather, shipParams }) {
         {/* Heatmap outer edge = 20 + 6×28 = 188. Arrows tip at 192, base at ~210 */}
         {[
           { dir: waveDir,  color: "#EF4444", lbl: `SEA ${weather?.waveHeight?.toFixed(1)||"\u2014"}m`,  hw: 7, len: 18 },
-          (weather?.swellHeight||0) > 0.1 && { dir: swellDir, color: "#22C55E", lbl: `SWL ${weather?.swellHeight?.toFixed(1)||"\u2014"}m`, hw: 6, len: 16 },
-          (weather?.currentSpeed||0) > 0.05 && { dir: weather?.currentDir??0, color: "#FACC15", lbl: `CUR ${weather?.currentSpeed?.toFixed(1)||"\u2014"}kt`, hw: 5, len: 14 },
-          { dir: windDir,  color: "#E2E8F0", lbl: `WND ${weather?.windKts?.toFixed(0)||"\u2014"}kt`, hw: 5, len: 14 },
+          (weather?.swellHeight||0) > 0.1 && { dir: swellDir, color: "#22C55E", lbl: `SWL ${weather?.swellHeight?.toFixed(1)||"\u2014"}m`, hw: 7, len: 18 },
+          (weather?.currentSpeed||0) > 0.05 && { dir: weather?.currentDir??0, color: "#FACC15", lbl: `CUR ${weather?.currentSpeed?.toFixed(1)||"\u2014"}kt`, hw: 7, len: 18 },
+          { dir: windDir,  color: "#E2E8F0", lbl: `WND ${weather?.windKts?.toFixed(0)||"\u2014"}kt`, hw: 7, len: 18 },
         ].filter(Boolean).map((item, idx) => {
           const tipR = MAX_R + 4;
           const baseR = tipR + item.len;
