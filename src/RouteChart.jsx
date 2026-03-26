@@ -504,11 +504,6 @@ export default function RouteChart({ shipParams }) {
 
       {/* ═══ RIGHT PANEL ═══ */}
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
-        <ForecastScrubber marineGrid={marineGrid} chartHourIdx={chartHourIdx} setChartHourIdx={setChartHourIdx}
-          stepSize={stepSize} setStepSize={setStepSize} playing={playing} setPlaying={setPlaying}
-          playSpeed={playSpeed} setPlaySpeed={setPlaySpeed} maxHourIdx={maxHourIdx}
-          lastFetchSrc={lastFetchSrc} gridFetchedAt={gridFetchedAt} />
-
         {/* Map */}
         <div style={{background:panelBg,borderRadius:8,border:"1px solid #334155",overflow:"hidden",flex:1,minHeight:480,position:"relative"}}>
           <MapContainer center={route?[route.waypoints[0].lat,route.waypoints[0].lon]:[45,-20]} zoom={4}
@@ -578,6 +573,12 @@ export default function RouteChart({ shipParams }) {
             })}
           </MapContainer>
         </div>
+
+        {/* Forecast scrubber — below the synoptic chart */}
+        <ForecastScrubber marineGrid={marineGrid} chartHourIdx={chartHourIdx} setChartHourIdx={setChartHourIdx}
+          stepSize={stepSize} setStepSize={setStepSize} playing={playing} setPlaying={setPlaying}
+          playSpeed={playSpeed} setPlaySpeed={setPlaySpeed} maxHourIdx={maxHourIdx}
+          lastFetchSrc={lastFetchSrc} gridFetchedAt={gridFetchedAt} />
 
         {/* Polar Diagram — always shown when voyage weather available */}
         {voyageWeather?.length > 0 && (() => { try {
