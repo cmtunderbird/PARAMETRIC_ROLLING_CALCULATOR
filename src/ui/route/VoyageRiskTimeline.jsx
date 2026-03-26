@@ -7,7 +7,7 @@ export default function VoyageRiskTimeline({
 }) {
   if (!voyageWeather?.length) return null;
   const maxWh = Math.max(...voyageWeather.map(p=>p.weather?.waveHeight||0),1);
-  const eospMs = voyageWPs?.[voyageWPs.length-1]?.etaMs || new Date(bospDT).getTime()+1;
+  const eospMs = voyageWPs?.[voyageWPs.length-1]?.etaMs || new Date(bospDT + 'Z').getTime()+1;
   return (
     <div style={{background:panelBg,borderRadius:8,padding:"12px 16px",border:"1px solid #334155"}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
@@ -35,7 +35,7 @@ export default function VoyageRiskTimeline({
         })}
       </div>
       <div style={{display:"flex",justifyContent:"space-between",marginTop:4,fontSize:9,color:"#64748B",fontFamily:"'JetBrains Mono',monospace"}}>
-        <span>BOSP {new Date(bospDT).toUTCString().slice(5,16)} UTC</span>
+        <span>BOSP {new Date(bospDT + 'Z').toUTCString().slice(5,16)} UTC</span>
         <span style={{color:"#3B82F6"}}>{voyageWPs?.[voyageWPs.length-1]?.cumNM?.toFixed(0)||"\u2014"} NM</span>
         <span>EOSP {new Date(eospMs).toUTCString().slice(5,16)} UTC</span>
       </div>

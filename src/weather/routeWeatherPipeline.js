@@ -95,7 +95,7 @@ export async function fetchRouteWeather({
 
   // ═══ STAGE 1: Calculate voyage ETAs ═══
   onProgress("Calculating voyage ETAs...", 5, "");
-  const bospMs = new Date(bospDT).getTime();
+  const bospMs = new Date(bospDT + 'Z').getTime(); // explicit UTC
   const voyageWPs = calcVoyageETAs(waypoints, bospMs, voyageSpeed);
   progress("voyage_etas", `${voyageWPs.length} waypoints`);
 

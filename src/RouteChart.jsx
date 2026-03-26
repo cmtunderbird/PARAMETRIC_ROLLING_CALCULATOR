@@ -116,8 +116,8 @@ export default function RouteChart({ shipParams }) {
   const [editMode, setEditMode] = useState(false);
   const [editingIdx, setEditingIdx] = useState(null);
   const [editForm, setEditForm] = useState({});
-  const nowLocal = () => { const d=new Date(); d.setSeconds(0,0); return d.toISOString().slice(0,16); };
-  const [bospDT, setBospDT] = useState(nowLocal);
+  const nowUTC = () => { const d=new Date(); d.setSeconds(0,0); return d.toISOString().slice(0,16); };
+  const [bospDT, setBospDT] = useState(nowUTC);
   const [voyageSpeed, setVoyageSpeed] = useState(shipParams?.speed||15);
   const [bospIdx, setBospIdx] = useState(0);
   const [eospIdx, setEospIdx] = useState(null); // null = last WP
@@ -337,7 +337,7 @@ export default function RouteChart({ shipParams }) {
   const calcVoyage = () => {
     if (!route?.waypoints) return;
     const ei = eospIdx ?? (route.waypoints.length - 1);
-    setVoyageWPs(calcVoyageETAs(route.waypoints, new Date(bospDT).getTime(), voyageSpeed,
+    setVoyageWPs(calcVoyageETAs(route.waypoints, new Date(bospDT + 'Z').getTime(), voyageSpeed,
       { bospIdx, eospIdx: ei, legSpeeds }));
     setVoyageWeather(null);
   };
@@ -351,7 +351,7 @@ export default function RouteChart({ shipParams }) {
   // ── Computed ──
   const eosp = voyageWPs?.[voyageWPs.length-1];
   const eospStr = eosp ? new Date(eosp.etaMs).toUTCString().slice(0,25)+' UTC' : '—';
-  const voyageDaysStr = eosp ? ((eosp.etaMs - new Date(bospDT).getTime())/86400000).toFixed(1) : '—';
+  const voyageDaysStr = eosp ? ((eosp.etaMs - new Date(bospDT + 'Z').getTime())/86400000).toFixed(1) : '—';
   const maxRisk = voyageWeather ? Math.max(...voyageWeather.map(p=>p.riskSeverity)) : 0;
 
   // ── Dynamic polar context: resolves hover > scrubber > live ship ──────────

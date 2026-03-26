@@ -55,7 +55,9 @@ function fmtETA(ms) {
   const d = new Date(ms);
   const now = new Date();
   const dayDiff = Math.floor((ms - now.getTime()) / 86400000);
-  const time = d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  const hh = String(d.getUTCHours()).padStart(2, '0');
+  const mm = String(d.getUTCMinutes()).padStart(2, '0');
+  const time = `${hh}:${mm}`;
   return dayDiff > 0 ? `D+${dayDiff} ${time}` : time;
 }
 
