@@ -633,16 +633,52 @@ export default function RouteChart({ shipParams }) {
               <ShipPolarDiagram pos={polarPos} weather={polarWx} shipParams={shipParams} />
               <div style={{flex:1,minWidth:220,display:"flex",flexDirection:"column",gap:10}}>
                 <div style={{padding:12,background:"#0F172A",borderRadius:6,border:"1px solid #334155"}}>
-                  <div style={{color:"#F59E0B",fontSize:10,fontWeight:700,letterSpacing:"0.1em",marginBottom:8,textTransform:"uppercase"}}>Current State</div>
+                  <div style={{color:"#F59E0B",fontSize:10,fontWeight:700,letterSpacing:"0.1em",marginBottom:8,textTransform:"uppercase"}}>Navigation</div>
                   <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}>
-                    {[{l:"Ship Heading",v:`${(polarPos.heading||0).toFixed(0)}°T`,c:"#22D3EE"},
-                      {l:"COG",v:`${(polarPos.cog||0).toFixed(0)}°T`,c:"#3B82F6"},
-                      {l:"Wave dir (FROM)",v:`${polarWx?.waveDir?.toFixed(0)||"—"}°T`,c:"#EF4444"},
-                      {l:"Swell dir (FROM)",v:`${polarWx?.swellDir?.toFixed(0)||"—"}°T`,c:"#F59E0B"},
-                      {l:"Wind dir (FROM)",v:`${polarWx?.windDir?.toFixed(0)||"—"}°T`,c:"#E2E8F0"},
-                      {l:"Rel. Wave angle",v:`${(((polarWx?.waveDir||0)-(polarPos?.heading||0)+360)%360).toFixed(0)}°`,c:"#94A3B8"},
-                    ].map(({l,v,c})=>(<div key={l}><div style={{color:"#64748B",fontSize:9}}>{l}</div><div style={{color:c,fontWeight:700}}>{v}</div></div>))}
+                    <div><div style={{color:"#64748B",fontSize:9}}>Heading</div><div style={{color:"#22D3EE",fontWeight:700}}>{(polarPos.heading||0).toFixed(0)}°T</div></div>
+                    <div><div style={{color:"#64748B",fontSize:9}}>COG</div><div style={{color:"#3B82F6",fontWeight:700}}>{(polarPos.cog||0).toFixed(0)}°T</div></div>
+                    <div><div style={{color:"#64748B",fontSize:9}}>Speed</div><div style={{color:"#E2E8F0",fontWeight:700}}>{shipParams?.speed||"—"} kts</div></div>
+                    <div><div style={{color:"#64748B",fontSize:9}}>Rel. Wave</div><div style={{color:"#94A3B8",fontWeight:700}}>{(((polarWx?.waveDir||0)-(polarPos?.heading||0)+360)%360).toFixed(0)}°</div></div>
                   </div>
+                </div>
+                {/* BVS-style Sea / Swell / Current / Wind table */}
+                <div style={{background:"#0F172A",borderRadius:6,border:"1px solid #334155",overflow:"hidden"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,fontFamily:"'JetBrains Mono',monospace"}}>
+                    <thead><tr style={{background:"#1E293B"}}>
+                      <th style={{padding:"4px 6px",textAlign:"left",color:"#64748B",fontSize:8,fontWeight:700}}></th>
+                      <th style={{padding:"4px 6px",textAlign:"right",color:"#EF4444",fontSize:8,fontWeight:700}}>SEA</th>
+                      <th style={{padding:"4px 6px",textAlign:"right",color:"#22C55E",fontSize:8,fontWeight:700}}>SWELL</th>
+                    </tr></thead>
+                    <tbody>
+                      <tr style={{borderBottom:"1px solid #1E293B"}}>
+                        <td style={{padding:"3px 6px",color:"#64748B"}}>Height (m)</td>
+                        <td style={{padding:"3px 6px",textAlign:"right",color:"#EF4444",fontWeight:700}}>{polarWx?.waveHeight?.toFixed(1)||"—"}</td>
+                        <td style={{padding:"3px 6px",textAlign:"right",color:"#22C55E",fontWeight:700}}>{polarWx?.swellHeight?.toFixed(1)||"—"}</td>
+                      </tr>
+                      <tr style={{borderBottom:"1px solid #1E293B"}}>
+                        <td style={{padding:"3px 6px",color:"#64748B"}}>Dir (°T)</td>
+                        <td style={{padding:"3px 6px",textAlign:"right",color:"#EF4444",fontWeight:700}}>{polarWx?.waveDir?.toFixed(0)||"—"}</td>
+                        <td style={{padding:"3px 6px",textAlign:"right",color:"#22C55E",fontWeight:700}}>{polarWx?.swellDir?.toFixed(0)||"—"}</td>
+                      </tr>
+                      <tr style={{borderBottom:"1px solid #1E293B"}}>
+                        <td style={{padding:"3px 6px",color:"#64748B"}}>Period (s)</td>
+                        <td style={{padding:"3px 6px",textAlign:"right",color:"#EF4444",fontWeight:700}}>{polarWx?.wavePeriod?.toFixed(1)||"—"}</td>
+                        <td style={{padding:"3px 6px",textAlign:"right",color:"#22C55E",fontWeight:700}}>{polarWx?.swellPeriod?.toFixed(1)||"—"}</td>
+                      </tr>
+                      <tr style={{borderBottom:"1px solid #1E293B"}}>
+                        <td style={{padding:"3px 6px",color:"#64748B"}}>Wind</td>
+                        <td colSpan={2} style={{padding:"3px 6px",textAlign:"right",color:"#E2E8F0",fontWeight:700}}>
+                          {polarWx?.windKts?.toFixed(0)||"—"} kts from {polarWx?.windDir?.toFixed(0)||"—"}°T
+                        </td>
+                      </tr>
+                      {polarWx?.currentSpeed > 0 && <tr>
+                        <td style={{padding:"3px 6px",color:"#64748B"}}>Current</td>
+                        <td colSpan={2} style={{padding:"3px 6px",textAlign:"right",color:"#FACC15",fontWeight:700}}>
+                          {polarWx.currentSpeed?.toFixed(1)||"—"} kts → {polarWx.currentDir?.toFixed(0)||"—"}°T
+                        </td>
+                      </tr>}
+                    </tbody>
+                  </table>
                 </div>
                 {polarMotion && <div style={{padding:12,background:"#0F172A",borderRadius:6,border:`1px solid ${polarMStat?.color||"#334155"}50`}}>
                   <div style={{color:polarMStat?.color||"#F59E0B",fontSize:12,fontWeight:800,marginBottom:8}}>{polarMStat?.label||"—"}</div>

@@ -357,12 +357,79 @@ export function ShipPolarDiagram({ pos, weather, shipParams }) {
         {/* ── Outer ring ── */}
         <circle cx={CX} cy={CY} r={MAX_R} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="1"/>
 
-        {/* ── Environmental vectors — thin lines, heatmap stays dominant ── */}
-        {weather?.waveDir  != null && <Arrow bearing={waveDir}  len={MAX_R-20} color="#EF4444" width={1.5} label="WAV"/>}
-        {weather?.swellDir != null && <Arrow bearing={swellDir} len={MAX_R-32} color="#F59E0B" width={1.2} label="SWL" dash="5,3"/>}
-        {weather?.windDir  != null && <Arrow bearing={windDir}  len={MAX_R-26} color="#E2E8F0" width={1}   label="WND" dash="3,2"/>}
+        {/* ── BVS-style environmental wedge indicators ── */}
+        {weather?.waveDir != null && (() => {
+          const spread = 12; // ±12° wedge half-width
+          const r1 = 30, r2 = MAX_R - 8;
+          const a1 = (waveDir - spread) * DEG_TO_RAD - Math.PI/2;
+          const a2 = (waveDir + spread) * DEG_TO_RAD - Math.PI/2;
+          const ac = waveDir * DEG_TO_RAD - Math.PI/2;
+          return <g>
+            {/* Sea wedge — red filled sector */}
+            <path d={`M${CX + r1*Math.cos(a1)},${CY + r1*Math.sin(a1)} ` +
+              `A${r1},${r1} 0 0,1 ${CX + r1*Math.cos(a2)},${CY + r1*Math.sin(a2)} ` +
+              `L${CX + r2*Math.cos(a2)},${CY + r2*Math.sin(a2)} ` +
+              `A${r2},${r2} 0 0,0 ${CX + r2*Math.cos(a1)},${CY + r2*Math.sin(a1)} Z`}
+              fill="rgba(239,68,68,0.25)" stroke="rgba(239,68,68,0.8)" strokeWidth="1.5"/>
+            {/* Sea centre line */}
+            <line x1={CX + r1*Math.cos(ac)} y1={CY + r1*Math.sin(ac)}
+              x2={CX + r2*Math.cos(ac)} y2={CY + r2*Math.sin(ac)}
+              stroke="#EF4444" strokeWidth="1.5" opacity="0.9"/>
+            {/* Sea label with value */}
+            <text x={vecPt(waveDir, MAX_R + 12).x} y={vecPt(waveDir, MAX_R + 12).y}
+              textAnchor="middle" dominantBaseline="middle"
+              style={{fontSize:7,fontWeight:700,fill:"#EF4444",fontFamily:"'JetBrains Mono',monospace"}}>
+              SEA {weather.waveHeight?.toFixed(1)||"—"}m</text>
+          </g>;
+        })()}
 
-        {/* ── Ship heading + COG vectors ── */}
+        {weather?.swellDir != null && weather?.swellHeight > 0 && (() => {
+          const spread = 10;
+          const r1 = 30, r2 = MAX_R - 18;
+          const a1 = (swellDir - spread) * DEG_TO_RAD - Math.PI/2;
+          const a2 = (swellDir + spread) * DEG_TO_RAD - Math.PI/2;
+          const ac = swellDir * DEG_TO_RAD - Math.PI/2;
+          return <g>
+            {/* Swell wedge — green filled sector */}
+            <path d={`M${CX + r1*Math.cos(a1)},${CY + r1*Math.sin(a1)} ` +
+              `A${r1},${r1} 0 0,1 ${CX + r1*Math.cos(a2)},${CY + r1*Math.sin(a2)} ` +
+              `L${CX + r2*Math.cos(a2)},${CY + r2*Math.sin(a2)} ` +
+              `A${r2},${r2} 0 0,0 ${CX + r2*Math.cos(a1)},${CY + r2*Math.sin(a1)} Z`}
+              fill="rgba(34,197,94,0.20)" stroke="rgba(34,197,94,0.75)" strokeWidth="1.2" strokeDasharray="4,2"/>
+            {/* Swell centre line */}
+            <line x1={CX + r1*Math.cos(ac)} y1={CY + r1*Math.sin(ac)}
+              x2={CX + r2*Math.cos(ac)} y2={CY + r2*Math.sin(ac)}
+              stroke="#22C55E" strokeWidth="1.2" opacity="0.8" strokeDasharray="5,3"/>
+            {/* Swell label */}
+            <text x={vecPt(swellDir, MAX_R + 12).x} y={vecPt(swellDir, MAX_R + 12).y + 10}
+              textAnchor="middle" dominantBaseline="middle"
+              style={{fontSize:7,fontWeight:700,fill:"#22C55E",fontFamily:"'JetBrains Mono',monospace"}}>
+              SWL {weather.swellHeight?.toFixed(1)||"—"}m</text>
+          </g>;
+        })()}
+
+        {/* Current arrow — yellow bold, BVS style */}
+        {weather?.currentSpeed > 0.05 && (() => {
+          const curDir = weather.currentDir ?? 0;
+          const curLen = Math.min(weather.currentSpeed * 80, MAX_R - 30);
+          const ca = curDir * DEG_TO_RAD - Math.PI/2;
+          const tx = CX + curLen * Math.cos(ca), ty = CY + curLen * Math.sin(ca);
+          const ha = 0.4, hl = 10;
+          return <g>
+            <line x1={CX} y1={CY} x2={tx} y2={ty} stroke="#FACC15" strokeWidth="3" opacity="0.9" strokeLinecap="round"/>
+            <polygon points={`${tx},${ty} ${tx-hl*Math.cos(ca-ha)},${ty-hl*Math.sin(ca-ha)} ${tx-hl*Math.cos(ca+ha)},${ty-hl*Math.sin(ca+ha)}`}
+              fill="#FACC15" opacity="0.9"/>
+            <text x={vecPt(curDir, curLen + 14).x} y={vecPt(curDir, curLen + 14).y}
+              textAnchor="middle" dominantBaseline="middle"
+              style={{fontSize:7,fontWeight:700,fill:"#FACC15",fontFamily:"'JetBrains Mono',monospace"}}>
+              CUR {weather.currentSpeed?.toFixed(1)}kt</text>
+          </g>;
+        })()}
+
+        {/* Wind direction — white dashed line */}
+        {weather?.windDir != null && <Arrow bearing={windDir} len={MAX_R-26} color="#E2E8F0" width={1} dash="3,2" label={`WND ${weather.windKts?.toFixed(0)||"—"}kt`}/>}
+
+        {/* Ship heading + COG vectors — clean lines */}
         <Arrow bearing={cog} len={MAX_R-14} color="#3B82F6" width={1.2} dash="7,4" label="COG"/>
         <Arrow bearing={hdg} len={MAX_R-8}  color="#22D3EE" width={2}            label="HDG"/>
 
@@ -390,9 +457,10 @@ export function ShipPolarDiagram({ pos, weather, shipParams }) {
         {[
           {color:"#22D3EE",dash:"",label:"HDG (Ship Heading)"},
           {color:"#3B82F6",dash:"9,5",label:"COG (Course Over Ground)"},
-          {color:"#EF4444",dash:"",label:"WAV (Wave direction FROM)"},
-          {color:"#F59E0B",dash:"6,3",label:"SWL (Swell direction FROM)"},
-          {color:"#E2E8F0",dash:"3,3",label:"WND (Wind direction FROM)"},
+          {color:"#EF4444",dash:"",label:"SEA (Wind sea FROM)"},
+          {color:"#22C55E",dash:"5,3",label:"SWL (Swell FROM)"},
+          {color:"#FACC15",dash:"",label:"CUR (Current TO)"},
+          {color:"#E2E8F0",dash:"3,3",label:"WND (Wind FROM)"},
           {color:"#FF0040",dash:"",label:"─── Parametric (Tr≈2Te)"},
           {color:"#FF8C00",dash:"4,3",label:"--- Synchronous (Tr≈Te)"},
         ].map(({color,label})=>(
