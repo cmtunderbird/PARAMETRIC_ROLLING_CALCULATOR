@@ -629,63 +629,63 @@ export default function RouteChart({ shipParams }) {
                 {chartTimeMs && <div style={{color:"#F59E0B",fontSize:9}}>+{chartHourIdx}h — {new Date(chartTimeMs).toUTCString().slice(5,22)}</div>}
               </div>
             </div>
-            {/* ── Polar diagram centred, full available width ── */}
-            <div style={{display:"flex",justifyContent:"center",marginBottom:12}}>
-              <ShipPolarDiagram pos={polarPos} weather={polarWx} shipParams={shipParams} />
-            </div>
-
-            {/* ── Data panels in compact 3-column grid below ── */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:10}}>
-              {/* Navigation */}
-              <div style={{padding:10,background:"#0F172A",borderRadius:6,border:"1px solid #334155"}}>
-                <div style={{color:"#F59E0B",fontSize:9,fontWeight:700,letterSpacing:"0.1em",marginBottom:6,textTransform:"uppercase"}}>Navigation</div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,fontSize:10,fontFamily:"'JetBrains Mono',monospace"}}>
-                  <div><div style={{color:"#64748B",fontSize:8}}>Heading</div><div style={{color:"#22D3EE",fontWeight:700}}>{(polarPos.heading||0).toFixed(0)}°T</div></div>
-                  <div><div style={{color:"#64748B",fontSize:8}}>COG</div><div style={{color:"#3B82F6",fontWeight:700}}>{(polarPos.cog||0).toFixed(0)}°T</div></div>
-                  <div><div style={{color:"#64748B",fontSize:8}}>Speed</div><div style={{color:"#E2E8F0",fontWeight:700}}>{shipParams?.speed||"\u2014"} kts</div></div>
-                  <div><div style={{color:"#64748B",fontSize:8}}>Rel. Wave</div><div style={{color:"#94A3B8",fontWeight:700}}>{(((polarWx?.waveDir||0)-(polarPos?.heading||0)+360)%360).toFixed(0)}°</div></div>
+            {/* ── Polar diagram LEFT + data panels stacked RIGHT ── */}
+            <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
+              <div style={{flexShrink:0}}>
+                <ShipPolarDiagram pos={polarPos} weather={polarWx} shipParams={shipParams} />
+              </div>
+              <div style={{flex:1,display:"flex",flexDirection:"column",gap:8,minWidth:0}}>
+                {/* Navigation */}
+                <div style={{padding:10,background:"#0F172A",borderRadius:6,border:"1px solid #334155"}}>
+                  <div style={{color:"#F59E0B",fontSize:9,fontWeight:700,letterSpacing:"0.1em",marginBottom:6,textTransform:"uppercase"}}>Navigation</div>
+                  <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:4,fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}>
+                    <div><div style={{color:"#64748B",fontSize:8}}>Heading</div><div style={{color:"#22D3EE",fontWeight:700,fontSize:14}}>{(polarPos.heading||0).toFixed(0)}°T</div></div>
+                    <div><div style={{color:"#64748B",fontSize:8}}>COG</div><div style={{color:"#3B82F6",fontWeight:700,fontSize:14}}>{(polarPos.cog||0).toFixed(0)}°T</div></div>
+                    <div><div style={{color:"#64748B",fontSize:8}}>Speed</div><div style={{color:"#E2E8F0",fontWeight:700,fontSize:14}}>{shipParams?.speed||"\u2014"} kts</div></div>
+                    <div><div style={{color:"#64748B",fontSize:8}}>Rel. Wave</div><div style={{color:"#94A3B8",fontWeight:700,fontSize:14}}>{(((polarWx?.waveDir||0)-(polarPos?.heading||0)+360)%360).toFixed(0)}°</div></div>
+                  </div>
                 </div>
-              </div>
 
-              {/* Sea / Swell / Wind / Current */}
-              <div style={{background:"#0F172A",borderRadius:6,border:"1px solid #334155",overflow:"hidden"}}>
-                <table style={{width:"100%",borderCollapse:"collapse",fontSize:9,fontFamily:"'JetBrains Mono',monospace"}}>
-                  <thead><tr style={{background:"#1E293B"}}>
-                    <th style={{padding:"3px 5px",textAlign:"left",color:"#64748B",fontSize:8}}></th>
-                    <th style={{padding:"3px 5px",textAlign:"right",color:"#EF4444",fontSize:8,fontWeight:700}}>SEA</th>
-                    <th style={{padding:"3px 5px",textAlign:"right",color:"#22C55E",fontSize:8,fontWeight:700}}>SWELL</th>
-                  </tr></thead>
-                  <tbody>
-                    <tr style={{borderBottom:"1px solid #1E293B"}}><td style={{padding:"2px 5px",color:"#64748B"}}>Hs (m)</td>
-                      <td style={{padding:"2px 5px",textAlign:"right",color:"#EF4444",fontWeight:700}}>{polarWx?.waveHeight?.toFixed(1)||"\u2014"}</td>
-                      <td style={{padding:"2px 5px",textAlign:"right",color:"#22C55E",fontWeight:700}}>{polarWx?.swellHeight?.toFixed(1)||"\u2014"}</td></tr>
-                    <tr style={{borderBottom:"1px solid #1E293B"}}><td style={{padding:"2px 5px",color:"#64748B"}}>Dir (°T)</td>
-                      <td style={{padding:"2px 5px",textAlign:"right",color:"#EF4444",fontWeight:700}}>{polarWx?.waveDir?.toFixed(0)||"\u2014"}</td>
-                      <td style={{padding:"2px 5px",textAlign:"right",color:"#22C55E",fontWeight:700}}>{polarWx?.swellDir?.toFixed(0)||"\u2014"}</td></tr>
-                    <tr style={{borderBottom:"1px solid #1E293B"}}><td style={{padding:"2px 5px",color:"#64748B"}}>Tp (s)</td>
-                      <td style={{padding:"2px 5px",textAlign:"right",color:"#EF4444",fontWeight:700}}>{polarWx?.wavePeriod?.toFixed(1)||"\u2014"}</td>
-                      <td style={{padding:"2px 5px",textAlign:"right",color:"#22C55E",fontWeight:700}}>{polarWx?.swellPeriod?.toFixed(1)||"\u2014"}</td></tr>
-                    <tr style={{borderBottom:"1px solid #1E293B"}}><td style={{padding:"2px 5px",color:"#64748B"}}>Wind</td>
-                      <td colSpan={2} style={{padding:"2px 5px",textAlign:"right",color:"#E2E8F0",fontWeight:700}}>{polarWx?.windKts?.toFixed(0)||"\u2014"} kts from {polarWx?.windDir?.toFixed(0)||"\u2014"}°T</td></tr>
-                    {polarWx?.currentSpeed > 0 && <tr><td style={{padding:"2px 5px",color:"#64748B"}}>Current</td>
-                      <td colSpan={2} style={{padding:"2px 5px",textAlign:"right",color:"#FACC15",fontWeight:700}}>{polarWx.currentSpeed?.toFixed(1)||"\u2014"} kts → {polarWx.currentDir?.toFixed(0)||"\u2014"}°T</td></tr>}
-                  </tbody>
-                </table>
-              </div>
+                {/* Sea / Swell / Wind / Current */}
+                <div style={{background:"#0F172A",borderRadius:6,border:"1px solid #334155",overflow:"hidden"}}>
+                  <table style={{width:"100%",borderCollapse:"collapse",fontSize:10,fontFamily:"'JetBrains Mono',monospace"}}>
+                    <thead><tr style={{background:"#1E293B"}}>
+                      <th style={{padding:"4px 8px",textAlign:"left",color:"#64748B",fontSize:9}}></th>
+                      <th style={{padding:"4px 8px",textAlign:"right",color:"#EF4444",fontSize:9,fontWeight:700}}>SEA</th>
+                      <th style={{padding:"4px 8px",textAlign:"right",color:"#22C55E",fontSize:9,fontWeight:700}}>SWELL</th>
+                    </tr></thead>
+                    <tbody>
+                      <tr style={{borderBottom:"1px solid #1E293B"}}><td style={{padding:"3px 8px",color:"#64748B"}}>Hs (m)</td>
+                        <td style={{padding:"3px 8px",textAlign:"right",color:"#EF4444",fontWeight:700}}>{polarWx?.waveHeight?.toFixed(1)||"\u2014"}</td>
+                        <td style={{padding:"3px 8px",textAlign:"right",color:"#22C55E",fontWeight:700}}>{polarWx?.swellHeight?.toFixed(1)||"\u2014"}</td></tr>
+                      <tr style={{borderBottom:"1px solid #1E293B"}}><td style={{padding:"3px 8px",color:"#64748B"}}>Dir (°T)</td>
+                        <td style={{padding:"3px 8px",textAlign:"right",color:"#EF4444",fontWeight:700}}>{polarWx?.waveDir?.toFixed(0)||"\u2014"}</td>
+                        <td style={{padding:"3px 8px",textAlign:"right",color:"#22C55E",fontWeight:700}}>{polarWx?.swellDir?.toFixed(0)||"\u2014"}</td></tr>
+                      <tr style={{borderBottom:"1px solid #1E293B"}}><td style={{padding:"3px 8px",color:"#64748B"}}>Tp (s)</td>
+                        <td style={{padding:"3px 8px",textAlign:"right",color:"#EF4444",fontWeight:700}}>{polarWx?.wavePeriod?.toFixed(1)||"\u2014"}</td>
+                        <td style={{padding:"3px 8px",textAlign:"right",color:"#22C55E",fontWeight:700}}>{polarWx?.swellPeriod?.toFixed(1)||"\u2014"}</td></tr>
+                      <tr style={{borderBottom:"1px solid #1E293B"}}><td style={{padding:"3px 8px",color:"#64748B"}}>Wind</td>
+                        <td colSpan={2} style={{padding:"3px 8px",textAlign:"right",color:"#E2E8F0",fontWeight:700}}>{polarWx?.windKts?.toFixed(0)||"\u2014"} kts from {polarWx?.windDir?.toFixed(0)||"\u2014"}°T</td></tr>
+                      {polarWx?.currentSpeed > 0 && <tr><td style={{padding:"3px 8px",color:"#64748B"}}>Current</td>
+                        <td colSpan={2} style={{padding:"3px 8px",textAlign:"right",color:"#FACC15",fontWeight:700}}>{polarWx.currentSpeed?.toFixed(1)||"\u2014"} kts → {polarWx.currentDir?.toFixed(0)||"\u2014"}°T</td></tr>}
+                    </tbody>
+                  </table>
+                </div>
 
-              {/* Motions + Reading */}
-              <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {polarMotion && <div style={{padding:10,background:"#0F172A",borderRadius:6,border:`1px solid ${polarMStat?.color||"#334155"}50`,flex:1}}>
-                  <div style={{color:polarMStat?.color||"#F59E0B",fontSize:11,fontWeight:800,marginBottom:6}}>{polarMStat?.label||"\u2014"}</div>
-                  {[{l:"Roll",v:`${polarMotion.roll?.toFixed(1)??"\u2014"}°`,a:(polarMotion.roll||0)>=25},
-                    {l:"Pitch",v:`${polarMotion.pitch?.toFixed(1)??"\u2014"}°`,a:(polarMotion.pitch||0)>=8},
-                    {l:"Bridge acc",v:`${polarMotion.bridgeAcc?.toFixed(2)??"\u2014"} m/s²`,a:(polarMotion.bridgeAcc||0)>=2.94},
-                    {l:"Slam prob",v:`${((polarMotion.slam??0)*100).toFixed(1)}%`,a:(polarMotion.slam||0)>=0.1},
-                    {l:"Param risk",v:`${((polarMotion.paramRisk??0)*100).toFixed(0)}%`,a:(polarMotion.paramRisk||0)>=0.5},
-                  ].map(({l,v,a})=>(<div key={l} style={{display:"flex",justifyContent:"space-between",marginBottom:2,fontSize:10,fontFamily:"'JetBrains Mono',monospace"}}>
+                {/* Motions */}
+                {polarMotion && <div style={{padding:10,background:"#0F172A",borderRadius:6,border:`1px solid ${polarMStat?.color||"#334155"}50`}}>
+                  <div style={{color:polarMStat?.color||"#F59E0B",fontSize:12,fontWeight:800,marginBottom:6}}>{polarMStat?.label||"\u2014"}</div>
+                  {[{l:"Roll amplitude",v:`${polarMotion.roll?.toFixed(1)??"\u2014"}°`,a:(polarMotion.roll||0)>=25},
+                    {l:"Pitch amplitude",v:`${polarMotion.pitch?.toFixed(1)??"\u2014"}°`,a:(polarMotion.pitch||0)>=8},
+                    {l:"Bridge accel",v:`${polarMotion.bridgeAcc?.toFixed(2)??"\u2014"} m/s²`,a:(polarMotion.bridgeAcc||0)>=2.94},
+                    {l:"Slam probability",v:`${((polarMotion.slam??0)*100).toFixed(1)}%`,a:(polarMotion.slam||0)>=0.1},
+                    {l:"Parametric risk",v:`${((polarMotion.paramRisk??0)*100).toFixed(0)}%`,a:(polarMotion.paramRisk||0)>=0.5},
+                  ].map(({l,v,a})=>(<div key={l} style={{display:"flex",justifyContent:"space-between",marginBottom:3,fontSize:11,fontFamily:"'JetBrains Mono',monospace"}}>
                     <span style={{color:"#64748B"}}>{l}</span><span style={{color:a?"#EF4444":"#E2E8F0",fontWeight:a?800:400}}>{v}</span></div>))}
                 </div>}
-                <div style={{padding:8,background:"#0F172A",borderRadius:6,border:"1px solid #334155",fontSize:8,color:"#475569",lineHeight:1.5,fontFamily:"'JetBrains Mono',monospace"}}>
+
+                {/* Reading note */}
+                <div style={{padding:8,background:"#0F172A",borderRadius:6,border:"1px solid #334155",fontSize:9,color:"#475569",lineHeight:1.5,fontFamily:"'JetBrains Mono',monospace"}}>
                   <b style={{color:"#64748B"}}>Reading:</b> Red zones = Tᵣ ≈ 2Tₑ (resonance). Keep heading away from red sectors.</div>
               </div>
             </div>
