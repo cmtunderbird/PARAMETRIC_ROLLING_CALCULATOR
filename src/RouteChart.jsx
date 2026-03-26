@@ -623,18 +623,21 @@ export default function RouteChart({ shipParams }) {
                   Hs = {polarWx?.waveHeight?.toFixed(1)||"—"}m &nbsp;·&nbsp;
                   Tᵣ = {(shipParams?.Tr||14).toFixed(1)}s</div>
               </div>
-              <div style={{textAlign:"right",fontFamily:"'JetBrains Mono',monospace",fontSize:10}}>
-                <div style={{color:"#22D3EE"}}>{fmtLat(polarPos.lat)} &nbsp; {fmtLon(polarPos.lon)}</div>
-                <div style={{color:"#94A3B8"}}>Hdg: {(polarPos.heading||0).toFixed(0)}°T &nbsp; COG: {(polarPos.cog||0).toFixed(0)}°T</div>
-                {chartTimeMs && <div style={{color:"#F59E0B",fontSize:9}}>+{chartHourIdx}h — {new Date(chartTimeMs).toUTCString().slice(5,22)}</div>}
-              </div>
             </div>
             {/* ── Polar diagram LEFT + data panels stacked RIGHT ── */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 320px",gap:12,alignItems:"start"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 380px",gap:12,alignItems:"start"}}>
               <div>
                 <ShipPolarDiagram pos={polarPos} weather={polarWx} shipParams={shipParams} />
               </div>
               <div style={{display:"flex",flexDirection:"column",gap:8,minWidth:0,overflow:"hidden"}}>
+                {/* Position + Time */}
+                <div style={{padding:10,background:"#0F172A",borderRadius:6,border:"1px solid #334155"}}>
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:4}}>
+                    <span style={{color:"#22D3EE",fontSize:12,fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{fmtLat(polarPos.lat)}</span>
+                    <span style={{color:"#22D3EE",fontSize:12,fontWeight:700,fontFamily:"'JetBrains Mono',monospace"}}>{fmtLon(polarPos.lon)}</span>
+                  </div>
+                  {chartTimeMs && <div style={{color:"#F59E0B",fontSize:9,textAlign:"center",fontFamily:"'JetBrains Mono',monospace"}}>+{chartHourIdx}h — {new Date(chartTimeMs).toUTCString().slice(5,22)} UTC</div>}
+                </div>
                 {/* Navigation */}
                 <div style={{padding:10,background:"#0F172A",borderRadius:6,border:"1px solid #334155"}}>
                   <div style={{color:"#F59E0B",fontSize:9,fontWeight:700,letterSpacing:"0.1em",marginBottom:6,textTransform:"uppercase"}}>Navigation</div>
