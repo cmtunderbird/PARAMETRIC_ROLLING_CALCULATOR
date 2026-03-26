@@ -144,6 +144,7 @@ export default function RouteChart({ shipParams }) {
   const [cmemsTestLoading, setCmemsTestLoading] = useState(false);
   const [physicsGrid, setPhysicsGrid] = useState(null);
   const [showCurrents, setShowCurrents] = useState(true);
+  const [currentsStatus, setCurrentsStatus] = useState(null); // "ok" | error string | null
   const cmemsCredentials = cmemsUser && cmemsPass ? { user: cmemsUser, pass: cmemsPass } : null;
   const [chartHourIdx, setChartHourIdx] = useState(0);
   const [stepSize, setStepSize] = useState(6);
@@ -313,7 +314,14 @@ export default function RouteChart({ shipParams }) {
         setGridFetchedAt(result.marineGrid.fetchedAt);
       }
       if (result.atmoGrid) setAtmoGrid(result.atmoGrid);
-      if (result.physicsGrid) setPhysicsGrid(result.physicsGrid);
+      if (result.physicsGrid) {
+        setPhysicsGrid(result.physicsGrid);
+        setCurrentsStatus("ok");
+      } else {
+        const currErr = result.log?.find(l => l.stage === "currents" && l.error);
+        setCurrentsStatus(currErr ? currErr.error : (creds ? "No current data returned" : "CMEMS credentials required"));
+        console.warn("[Pipeline] Currents status:", currErr?.error || "no physics grid returned");
+      }
       setPipelineFamily(result.modelFamily);
       setChartHourIdx(0); setPlaying(false); setCacheInfo(cacheStatus());
 
@@ -670,7 +678,11 @@ export default function RouteChart({ shipParams }) {
                       <tr style={{borderBottom:"1px solid #1E293B"}}><td style={{padding:"3px 8px",color:"#64748B"}}>Wind</td>
                         <td colSpan={2} style={{padding:"3px 8px",textAlign:"right",color:"#E2E8F0",fontWeight:700}}>{polarWx?.windKts?.toFixed(0)||"\u2014"} kts from {polarWx?.windDir?.toFixed(0)||"\u2014"}°T</td></tr>
                       <tr><td style={{padding:"3px 8px",color:"#64748B"}}>Current</td>
-                        <td colSpan={2} style={{padding:"3px 8px",textAlign:"right",color:"#FACC15",fontWeight:700}}>{polarWx?.currentSpeed?.toFixed(1)||"\u2014"} kts → {polarWx?.currentDir?.toFixed(0)||"\u2014"}°T</td></tr>
+                        <td colSpan={2} style={{padding:"3px 8px",textAlign:"right",color: polarWx?.currentSpeed != null ? "#FACC15" : "#64748B",fontWeight:700,fontSize: polarWx?.currentSpeed != null ? 10 : 8}}>
+                          {polarWx?.currentSpeed != null
+                            ? `${polarWx.currentSpeed.toFixed(1)} kts \u2192 ${polarWx.currentDir?.toFixed(0)||"\u2014"}\u00b0T`
+                            : (currentsStatus === "ok" ? "\u2014" : (currentsStatus || "No CMEMS credentials"))
+                          }</td></tr>
                     </tbody>
                   </table>
                 </div>
