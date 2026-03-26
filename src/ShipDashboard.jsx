@@ -182,7 +182,7 @@ const HDGS   = Array.from({length:72}, (_,i) => i * 5);  // 0..355 step 5°
 // SVG thermal polar chart showing parametric roll risk across all headings × speeds
 // + overlaid directional vectors for wave, swell, wind, heading, COG
 export function ShipPolarDiagram({ pos, weather, shipParams }) {
-  const SIZE   = 620;
+  const SIZE   = 500;
   const CX     = SIZE / 2, CY = SIZE / 2;
   const MAX_R  = 178;
   const RINGS  = SPEEDS.map((_, i) => ({
@@ -340,14 +340,13 @@ export function ShipPolarDiagram({ pos, weather, shipParams }) {
 
         {/* ── Compass graticule ── */}
         {[0,30,60,90,120,150,180,210,240,270,300,330].map(d => {
-          const p = vecPt(d, MAX_R + 116);
           return <line key={d} x1={CX} y1={CY}
             x2={CX + (MAX_R) * Math.cos(d*DEG_TO_RAD - Math.PI/2)}
             y2={CY + (MAX_R) * Math.sin(d*DEG_TO_RAD - Math.PI/2)}
             stroke="rgba(255,255,255,0.07)" strokeWidth="0.5"/>;
         })}
         {compassDirs.map(({deg,lbl}) => {
-          const p = vecPt(deg, MAX_R + 120);
+          const p = vecPt(deg, MAX_R + 52);
           return <text key={lbl} x={p.x} y={p.y} textAnchor="middle" dominantBaseline="middle"
             style={{fontSize: lbl==="N"?12:9, fontWeight:lbl==="N"?900:500,
               fill: lbl==="N"?"#F59E0B":"rgba(255,255,255,0.6)",
@@ -357,33 +356,33 @@ export function ShipPolarDiagram({ pos, weather, shipParams }) {
         {/* ── Outer ring ── */}
         <circle cx={CX} cy={CY} r={MAX_R} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="1"/>
 
-        {/* ── Sea / Swell / Current / Wind — solid triangles OUTSIDE heatmap ── */}
-        {/* Heatmap extends to radius ~244 (RINGS outer), so triangles start at 248 */}
+        {/* ── BVS-style environmental arrowheads — just outside heatmap ring ── */}
+        {/* Heatmap outer edge = 20 + 6×28 = 188. Arrows tip at 192, base at ~210 */}
         {[
-          weather?.waveDir != null && { dir: waveDir, color: "#EF4444", lbl: `Sig ${weather.waveHeight?.toFixed(1)||"?"}m`, sz: 14, gap: 0 },
-          weather?.swellDir != null && (weather?.swellHeight||0) > 0.1 && { dir: swellDir, color: "#22C55E", lbl: `Swl ${weather.swellHeight?.toFixed(1)||"?"}m`, sz: 12, gap: 2 },
-          (weather?.currentSpeed||0) > 0.05 && { dir: weather.currentDir??0, color: "#FACC15", lbl: `Cur ${weather.currentSpeed?.toFixed(1)||"?"}kt`, sz: 11, gap: 4 },
-          weather?.windDir != null && { dir: windDir, color: "#CBD5E1", lbl: `Wnd ${weather.windKts?.toFixed(0)||"?"}kt`, sz: 9, gap: 6 },
+          { dir: waveDir,  color: "#EF4444", lbl: `SEA ${weather?.waveHeight?.toFixed(1)||"\u2014"}m`,  hw: 7, len: 18 },
+          (weather?.swellHeight||0) > 0.1 && { dir: swellDir, color: "#22C55E", lbl: `SWL ${weather?.swellHeight?.toFixed(1)||"\u2014"}m`, hw: 6, len: 16 },
+          (weather?.currentSpeed||0) > 0.05 && { dir: weather?.currentDir??0, color: "#FACC15", lbl: `CUR ${weather?.currentSpeed?.toFixed(1)||"\u2014"}kt`, hw: 5, len: 14 },
+          { dir: windDir,  color: "#E2E8F0", lbl: `WND ${weather?.windKts?.toFixed(0)||"\u2014"}kt`, hw: 5, len: 14 },
         ].filter(Boolean).map((item, idx) => {
-          const HEATMAP_R = 246; // just beyond outermost ring (244)
+          const tipR = MAX_R + 4;
+          const baseR = tipR + item.len;
           const ang = item.dir * DEG_TO_RAD - Math.PI / 2;
-          const perpAng = ang + Math.PI / 2;
-          const tipX = CX + (HEATMAP_R) * Math.cos(ang);
-          const tipY = CY + (HEATMAP_R) * Math.sin(ang);
-          const baseD = HEATMAP_R + item.sz * 2;
-          const bx1 = CX + baseD * Math.cos(ang) + item.sz * Math.cos(perpAng);
-          const by1 = CY + baseD * Math.sin(ang) + item.sz * Math.sin(perpAng);
-          const bx2 = CX + baseD * Math.cos(ang) - item.sz * Math.cos(perpAng);
-          const by2 = CY + baseD * Math.sin(ang) - item.sz * Math.sin(perpAng);
-          const lblX = CX + (baseD + 14) * Math.cos(ang);
-          const lblY = CY + (baseD + 14) * Math.sin(ang);
+          const perp = ang + Math.PI / 2;
+          const tipX = CX + tipR * Math.cos(ang);
+          const tipY = CY + tipR * Math.sin(ang);
+          const bx1 = CX + baseR * Math.cos(ang) + item.hw * Math.cos(perp);
+          const by1 = CY + baseR * Math.sin(ang) + item.hw * Math.sin(perp);
+          const bx2 = CX + baseR * Math.cos(ang) - item.hw * Math.cos(perp);
+          const by2 = CY + baseR * Math.sin(ang) - item.hw * Math.sin(perp);
+          const lblR = baseR + 12;
           return <g key={`env-${idx}`}>
             <path d={`M ${tipX} ${tipY} L ${bx1} ${by1} L ${bx2} ${by2} Z`}
-              fill={item.color} stroke="#000" strokeWidth="1.2" opacity="0.95"/>
-            <text x={lblX} y={lblY} textAnchor="middle" dominantBaseline="middle"
+              fill={item.color} stroke="#000" strokeWidth="0.8" opacity="0.92"/>
+            <text x={CX + lblR * Math.cos(ang)} y={CY + lblR * Math.sin(ang)}
+              textAnchor="middle" dominantBaseline="middle"
               style={{fontSize:8,fontWeight:800,fill:item.color,
                 fontFamily:"'JetBrains Mono',monospace",
-                paintOrder:"stroke",stroke:"#060D1A",strokeWidth:3}}>
+                paintOrder:"stroke",stroke:"#060D1A",strokeWidth:2.5}}>
               {item.lbl}</text>
           </g>;
         })}
