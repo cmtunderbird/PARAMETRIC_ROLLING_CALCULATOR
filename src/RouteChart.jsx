@@ -625,7 +625,7 @@ export default function RouteChart({ shipParams }) {
               </div>
             </div>
             {/* ── Polar diagram LEFT + data panels stacked RIGHT ── */}
-            <div style={{display:"grid",gridTemplateColumns:"1fr 380px",gap:12,alignItems:"start"}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 380px",gap:8,alignItems:"start"}}>
               <div>
                 <ShipPolarDiagram pos={polarPos} weather={polarWx} shipParams={shipParams} />
               </div>

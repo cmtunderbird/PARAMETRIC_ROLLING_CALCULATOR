@@ -323,7 +323,7 @@ export function ShipPolarDiagram({ pos, weather, shipParams }) {
 
   return (
     <div style={{position:"relative",display:"inline-block"}}>
-      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} style={{display:"block",background:"#060D1A",borderRadius:8,border:"1px solid #334155",width:"100%",maxWidth:SIZE,height:"auto"}}>
+      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} style={{display:"block",background:"#060D1A",borderRadius:8,border:"1px solid #334155",width:"100%",height:"auto"}}>
 
         {/* ── Thermal wedge sectors ── */}
         {sectors}
