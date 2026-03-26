@@ -182,7 +182,7 @@ const HDGS   = Array.from({length:72}, (_,i) => i * 5);  // 0..355 step 5°
 // SVG thermal polar chart showing parametric roll risk across all headings × speeds
 // + overlaid directional vectors for wave, swell, wind, heading, COG
 export function ShipPolarDiagram({ pos, weather, shipParams }) {
-  const SIZE   = 480;
+  const SIZE   = 520;
   const CX     = SIZE / 2, CY = SIZE / 2;
   const MAX_R  = 178;
   const RINGS  = SPEEDS.map((_, i) => ({
@@ -340,14 +340,14 @@ export function ShipPolarDiagram({ pos, weather, shipParams }) {
 
         {/* ── Compass graticule ── */}
         {[0,30,60,90,120,150,180,210,240,270,300,330].map(d => {
-          const p = vecPt(d, MAX_R + 10);
+          const p = vecPt(d, MAX_R + 58);
           return <line key={d} x1={CX} y1={CY}
             x2={CX + (MAX_R) * Math.cos(d*DEG_TO_RAD - Math.PI/2)}
             y2={CY + (MAX_R) * Math.sin(d*DEG_TO_RAD - Math.PI/2)}
             stroke="rgba(255,255,255,0.07)" strokeWidth="0.5"/>;
         })}
         {compassDirs.map(({deg,lbl}) => {
-          const p = vecPt(deg, MAX_R + 14);
+          const p = vecPt(deg, MAX_R + 62);
           return <text key={lbl} x={p.x} y={p.y} textAnchor="middle" dominantBaseline="middle"
             style={{fontSize: lbl==="N"?12:9, fontWeight:lbl==="N"?900:500,
               fill: lbl==="N"?"#F59E0B":"rgba(255,255,255,0.6)",
@@ -357,85 +357,110 @@ export function ShipPolarDiagram({ pos, weather, shipParams }) {
         {/* ── Outer ring ── */}
         <circle cx={CX} cy={CY} r={MAX_R} fill="none" stroke="rgba(255,255,255,0.12)" strokeWidth="1"/>
 
-        {/* ── Environmental indicators — OUTSIDE the ring, arrows pointing inward (BVS style) ── */}
-        {/* Sea (wind waves) — red arrow outside ring pointing inward */}
+        {/* ── BVS-style arrows OUTSIDE polar ring ── */}
+        {/* Each arrow: thick coloured line from outside pointing inward + large triangle tip */}
         {weather?.waveDir != null && (() => {
-          const dir = waveDir; // direction FROM
-          const outerR = MAX_R + 38;
-          const innerR = MAX_R + 4;
-          const ac = dir * DEG_TO_RAD - Math.PI/2;
-          const ox = CX + outerR * Math.cos(ac), oy = CY + outerR * Math.sin(ac);
-          const ix = CX + innerR * Math.cos(ac), iy = CY + innerR * Math.sin(ac);
-          const ha = 0.35, hl = 8;
+          const dir = waveDir;
+          const a = dir * DEG_TO_RAD - Math.PI/2;
+          const tipR = MAX_R + 2;   // arrowhead touches the ring
+          const tailR = MAX_R + 50; // tail extends well outside
+          const tipX = CX + tipR * Math.cos(a), tipY = CY + tipR * Math.sin(a);
+          const tailX = CX + tailR * Math.cos(a), tailY = CY + tailR * Math.sin(a);
+          // Triangle arrowhead: wide, pointing inward
+          const hw = 10; // half-width of arrowhead base
+          const perp = a + Math.PI/2;
+          const baseR = MAX_R + 16;
+          const b1x = CX + baseR * Math.cos(a) + hw * Math.cos(perp);
+          const b1y = CY + baseR * Math.sin(a) + hw * Math.sin(perp);
+          const b2x = CX + baseR * Math.cos(a) - hw * Math.cos(perp);
+          const b2y = CY + baseR * Math.sin(a) - hw * Math.sin(perp);
           return <g>
-            <line x1={ox} y1={oy} x2={ix} y2={iy} stroke="#EF4444" strokeWidth="2.5" strokeLinecap="round" opacity="0.9"/>
-            <polygon points={`${ix},${iy} ${ix-hl*Math.cos(ac-ha)+(hl*0.3)*Math.cos(ac)},${iy-hl*Math.sin(ac-ha)+(hl*0.3)*Math.sin(ac)} ${ix-hl*Math.cos(ac+ha)+(hl*0.3)*Math.cos(ac)},${iy-hl*Math.sin(ac+ha)+(hl*0.3)*Math.sin(ac)}`}
-              fill="#EF4444" opacity="0.9"/>
-            <text x={CX + (outerR+12) * Math.cos(ac)} y={CY + (outerR+12) * Math.sin(ac)}
+            <line x1={tailX} y1={tailY} x2={CX + baseR*Math.cos(a)} y2={CY + baseR*Math.sin(a)}
+              stroke="#EF4444" strokeWidth="3.5" strokeLinecap="round"/>
+            <polygon points={`${tipX},${tipY} ${b1x},${b1y} ${b2x},${b2y}`}
+              fill="#EF4444" stroke="#000" strokeWidth="0.5"/>
+            <text x={CX + (tailR+10)*Math.cos(a)} y={CY + (tailR+10)*Math.sin(a)}
               textAnchor="middle" dominantBaseline="middle"
-              style={{fontSize:7,fontWeight:800,fill:"#EF4444",fontFamily:"'JetBrains Mono',monospace"}}>
-              SEA {weather.waveHeight?.toFixed(1)||""}m</text>
+              style={{fontSize:8,fontWeight:800,fill:"#EF4444",fontFamily:"'JetBrains Mono',monospace"}}>
+              Sig {weather.waveHeight?.toFixed(1)||""}m</text>
           </g>;
         })()}
 
-        {/* Swell — green arrow outside ring pointing inward */}
-        {weather?.swellDir != null && (weather?.swellHeight||0) > 0 && (() => {
+        {weather?.swellDir != null && (weather?.swellHeight||0) > 0.1 && (() => {
           const dir = swellDir;
-          const outerR = MAX_R + 34;
-          const innerR = MAX_R + 4;
-          const ac = dir * DEG_TO_RAD - Math.PI/2;
-          const ox = CX + outerR * Math.cos(ac), oy = CY + outerR * Math.sin(ac);
-          const ix = CX + innerR * Math.cos(ac), iy = CY + innerR * Math.sin(ac);
-          const ha = 0.35, hl = 7;
+          const a = dir * DEG_TO_RAD - Math.PI/2;
+          const tipR = MAX_R + 2;
+          const tailR = MAX_R + 45;
+          const tipX = CX + tipR * Math.cos(a), tipY = CY + tipR * Math.sin(a);
+          const tailX = CX + tailR * Math.cos(a), tailY = CY + tailR * Math.sin(a);
+          const hw = 8;
+          const perp = a + Math.PI/2;
+          const baseR = MAX_R + 14;
+          const b1x = CX + baseR * Math.cos(a) + hw * Math.cos(perp);
+          const b1y = CY + baseR * Math.sin(a) + hw * Math.sin(perp);
+          const b2x = CX + baseR * Math.cos(a) - hw * Math.cos(perp);
+          const b2y = CY + baseR * Math.sin(a) - hw * Math.sin(perp);
           return <g>
-            <line x1={ox} y1={oy} x2={ix} y2={iy} stroke="#22C55E" strokeWidth="2" strokeLinecap="round" opacity="0.85" strokeDasharray="5,3"/>
-            <polygon points={`${ix},${iy} ${ix-hl*Math.cos(ac-ha)+(hl*0.3)*Math.cos(ac)},${iy-hl*Math.sin(ac-ha)+(hl*0.3)*Math.sin(ac)} ${ix-hl*Math.cos(ac+ha)+(hl*0.3)*Math.cos(ac)},${iy-hl*Math.sin(ac+ha)+(hl*0.3)*Math.sin(ac)}`}
-              fill="#22C55E" opacity="0.85"/>
-            <text x={CX + (outerR+12) * Math.cos(ac)} y={CY + (outerR+12) * Math.sin(ac)}
+            <line x1={tailX} y1={tailY} x2={CX + baseR*Math.cos(a)} y2={CY + baseR*Math.sin(a)}
+              stroke="#22C55E" strokeWidth="3" strokeLinecap="round" strokeDasharray="6,3"/>
+            <polygon points={`${tipX},${tipY} ${b1x},${b1y} ${b2x},${b2y}`}
+              fill="#22C55E" stroke="#000" strokeWidth="0.5"/>
+            <text x={CX + (tailR+10)*Math.cos(a)} y={CY + (tailR+10)*Math.sin(a)}
               textAnchor="middle" dominantBaseline="middle"
-              style={{fontSize:7,fontWeight:700,fill:"#22C55E",fontFamily:"'JetBrains Mono',monospace"}}>
-              SWL {weather.swellHeight?.toFixed(1)||""}m</text>
+              style={{fontSize:8,fontWeight:800,fill:"#22C55E",fontFamily:"'JetBrains Mono',monospace"}}>
+              Swl {weather.swellHeight?.toFixed(1)||""}m</text>
           </g>;
         })()}
 
-        {/* Current — yellow bold arrow outside ring pointing inward (direction TO) */}
         {(weather?.currentSpeed||0) > 0.05 && (() => {
-          const curDir = (weather.currentDir ?? 0);
-          const outerR = MAX_R + 30;
-          const innerR = MAX_R + 4;
-          const ac = curDir * DEG_TO_RAD - Math.PI/2;
-          const ox = CX + outerR * Math.cos(ac), oy = CY + outerR * Math.sin(ac);
-          const ix = CX + innerR * Math.cos(ac), iy = CY + innerR * Math.sin(ac);
-          const ha = 0.4, hl = 9;
-          // Current arrow points in the direction the current flows TO (opposite of FROM)
+          const dir = weather.currentDir ?? 0;
+          const a = dir * DEG_TO_RAD - Math.PI/2;
+          const tipR = MAX_R + 2;
+          const tailR = MAX_R + 40;
+          const tipX = CX + tipR * Math.cos(a), tipY = CY + tipR * Math.sin(a);
+          const tailX = CX + tailR * Math.cos(a), tailY = CY + tailR * Math.sin(a);
+          const hw = 7;
+          const perp = a + Math.PI/2;
+          const baseR = MAX_R + 13;
+          const b1x = CX + baseR * Math.cos(a) + hw * Math.cos(perp);
+          const b1y = CY + baseR * Math.sin(a) + hw * Math.sin(perp);
+          const b2x = CX + baseR * Math.cos(a) - hw * Math.cos(perp);
+          const b2y = CY + baseR * Math.sin(a) - hw * Math.sin(perp);
           return <g>
-            <line x1={ox} y1={oy} x2={ix} y2={iy} stroke="#FACC15" strokeWidth="3" strokeLinecap="round" opacity="0.9"/>
-            <polygon points={`${ix},${iy} ${ix-hl*Math.cos(ac-ha)+(hl*0.3)*Math.cos(ac)},${iy-hl*Math.sin(ac-ha)+(hl*0.3)*Math.sin(ac)} ${ix-hl*Math.cos(ac+ha)+(hl*0.3)*Math.cos(ac)},${iy-hl*Math.sin(ac+ha)+(hl*0.3)*Math.sin(ac)}`}
-              fill="#FACC15" opacity="0.9"/>
-            <text x={CX + (outerR+12) * Math.cos(ac)} y={CY + (outerR+12) * Math.sin(ac)}
+            <line x1={tailX} y1={tailY} x2={CX + baseR*Math.cos(a)} y2={CY + baseR*Math.sin(a)}
+              stroke="#FACC15" strokeWidth="4" strokeLinecap="round"/>
+            <polygon points={`${tipX},${tipY} ${b1x},${b1y} ${b2x},${b2y}`}
+              fill="#FACC15" stroke="#000" strokeWidth="0.5"/>
+            <text x={CX + (tailR+10)*Math.cos(a)} y={CY + (tailR+10)*Math.sin(a)}
               textAnchor="middle" dominantBaseline="middle"
-              style={{fontSize:7,fontWeight:800,fill:"#FACC15",fontFamily:"'JetBrains Mono',monospace"}}>
-              CUR {weather.currentSpeed?.toFixed(1)||""}kt</text>
+              style={{fontSize:8,fontWeight:800,fill:"#FACC15",fontFamily:"'JetBrains Mono',monospace"}}>
+              Cur {weather.currentSpeed?.toFixed(1)||""}kt</text>
           </g>;
         })()}
 
-        {/* Wind — white dashed arrow outside ring pointing inward */}
         {weather?.windDir != null && (() => {
           const dir = windDir;
-          const outerR = MAX_R + 32;
-          const innerR = MAX_R + 6;
-          const ac = dir * DEG_TO_RAD - Math.PI/2;
-          const ox = CX + outerR * Math.cos(ac), oy = CY + outerR * Math.sin(ac);
-          const ix = CX + innerR * Math.cos(ac), iy = CY + innerR * Math.sin(ac);
-          const ha = 0.3, hl = 6;
+          const a = dir * DEG_TO_RAD - Math.PI/2;
+          const tipR = MAX_R + 4;
+          const tailR = MAX_R + 42;
+          const tipX = CX + tipR * Math.cos(a), tipY = CY + tipR * Math.sin(a);
+          const tailX = CX + tailR * Math.cos(a), tailY = CY + tailR * Math.sin(a);
+          const hw = 6;
+          const perp = a + Math.PI/2;
+          const baseR = MAX_R + 14;
+          const b1x = CX + baseR * Math.cos(a) + hw * Math.cos(perp);
+          const b1y = CY + baseR * Math.sin(a) + hw * Math.sin(perp);
+          const b2x = CX + baseR * Math.cos(a) - hw * Math.cos(perp);
+          const b2y = CY + baseR * Math.sin(a) - hw * Math.sin(perp);
           return <g>
-            <line x1={ox} y1={oy} x2={ix} y2={iy} stroke="#E2E8F0" strokeWidth="1.2" strokeLinecap="round" opacity="0.7" strokeDasharray="3,2"/>
-            <polygon points={`${ix},${iy} ${ix-hl*Math.cos(ac-ha)+(hl*0.3)*Math.cos(ac)},${iy-hl*Math.sin(ac-ha)+(hl*0.3)*Math.sin(ac)} ${ix-hl*Math.cos(ac+ha)+(hl*0.3)*Math.cos(ac)},${iy-hl*Math.sin(ac+ha)+(hl*0.3)*Math.sin(ac)}`}
-              fill="#E2E8F0" opacity="0.7"/>
-            <text x={CX + (outerR+12) * Math.cos(ac)} y={CY + (outerR+12) * Math.sin(ac)}
+            <line x1={tailX} y1={tailY} x2={CX + baseR*Math.cos(a)} y2={CY + baseR*Math.sin(a)}
+              stroke="#CBD5E1" strokeWidth="2" strokeLinecap="round" strokeDasharray="4,3"/>
+            <polygon points={`${tipX},${tipY} ${b1x},${b1y} ${b2x},${b2y}`}
+              fill="#CBD5E1" stroke="#000" strokeWidth="0.5"/>
+            <text x={CX + (tailR+10)*Math.cos(a)} y={CY + (tailR+10)*Math.sin(a)}
               textAnchor="middle" dominantBaseline="middle"
               style={{fontSize:7,fontWeight:700,fill:"#CBD5E1",fontFamily:"'JetBrains Mono',monospace"}}>
-              WND {weather.windKts?.toFixed(0)||""}kt</text>
+              Wnd {weather.windKts?.toFixed(0)||""}kt</text>
           </g>;
         })()}
 
