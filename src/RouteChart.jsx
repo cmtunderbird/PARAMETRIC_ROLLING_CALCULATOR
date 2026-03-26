@@ -505,9 +505,9 @@ export default function RouteChart({ shipParams }) {
       {/* ═══ RIGHT PANEL ═══ */}
       <div style={{display:"flex",flexDirection:"column",gap:12}}>
         {/* Map */}
-        <div style={{background:panelBg,borderRadius:8,border:"1px solid #334155",overflow:"hidden",flex:1,minHeight:480,position:"relative"}}>
+        <div style={{background:panelBg,borderRadius:8,border:"1px solid #334155",overflow:"hidden",height:520,position:"relative"}}>
           <MapContainer center={route?[route.waypoints[0].lat,route.waypoints[0].lon]:[45,-20]} zoom={4}
-            style={{height:"100%",width:"100%",background:"#060D1A"}} zoomControl attributionControl>
+            style={{height:520,width:"100%",background:"#060D1A"}} zoomControl attributionControl>
             <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; OSM &copy; CARTO' />
             <TileLayer url="https://tiles.openseamap.org/seamark/{z}/{x}/{y}.png" attribution='&copy; OpenSeaMap' opacity={0.65} />
             <CaptureMap mapRef={mapRef} />
