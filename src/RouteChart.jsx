@@ -397,9 +397,9 @@ export default function RouteChart({ shipParams }) {
 
   // ═══ RENDER ═══════════════════════════════════════════════════════════════
   return (
-    <div style={{display:"grid",gridTemplateColumns:"310px 1fr",gap:16,minHeight:650}}>
+    <div style={{display:"grid",gridTemplateColumns:"310px 1fr",gap:16,minHeight:"calc(100vh - 100px)"}}>
       {/* ═══ LEFT PANEL ═══ */}
-      <div style={{display:"flex",flexDirection:"column",gap:12,overflowY:"auto",maxHeight:"calc(100vh - 100px)"}}>
+      <div style={{display:"flex",flexDirection:"column",gap:12,overflowY:"auto",height:"calc(100vh - 100px)",position:"sticky",top:0}}>
         {/* Route Import */}
         <Panel>
           {SH("Route Import")}
