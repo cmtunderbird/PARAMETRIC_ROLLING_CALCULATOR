@@ -482,7 +482,7 @@ export default function RouteChart({ shipParams }) {
           lastFetchSrc={lastFetchSrc} cacheInfo={cacheInfo} setCacheInfo={setCacheInfo} />
 
         {/* WP ETA table */}
-        {voyageWPs && <Panel style={{maxHeight:280,overflowY:"auto"}}>
+        {voyageWPs && <Panel>
           {SH("Waypoint ETAs")}
           <table style={{width:"100%",borderCollapse:"collapse",fontSize:9,fontFamily:"'JetBrains Mono',monospace"}}>
             <thead><tr style={{color:"#64748B"}}>
