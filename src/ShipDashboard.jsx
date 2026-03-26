@@ -182,7 +182,7 @@ const HDGS   = Array.from({length:72}, (_,i) => i * 5);  // 0..355 step 5°
 // SVG thermal polar chart showing parametric roll risk across all headings × speeds
 // + overlaid directional vectors for wave, swell, wind, heading, COG
 export function ShipPolarDiagram({ pos, weather, shipParams }) {
-  const SIZE   = 500;
+  const SIZE   = 560;
   const CX     = SIZE / 2, CY = SIZE / 2;
   const MAX_R  = 178;
   const RINGS  = SPEEDS.map((_, i) => ({
@@ -323,7 +323,7 @@ export function ShipPolarDiagram({ pos, weather, shipParams }) {
 
   return (
     <div style={{position:"relative",display:"inline-block"}}>
-      <svg width={SIZE} height={SIZE} style={{display:"block",background:"#060D1A",borderRadius:8,border:"1px solid #334155"}}>
+      <svg viewBox={`0 0 ${SIZE} ${SIZE}`} style={{display:"block",background:"#060D1A",borderRadius:8,border:"1px solid #334155",width:"100%",maxWidth:SIZE,height:"auto"}}>
 
         {/* ── Thermal wedge sectors ── */}
         {sectors}
