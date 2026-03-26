@@ -630,11 +630,11 @@ export default function RouteChart({ shipParams }) {
               </div>
             </div>
             {/* ── Polar diagram LEFT + data panels stacked RIGHT ── */}
-            <div style={{display:"flex",gap:14,alignItems:"flex-start"}}>
-              <div style={{flexShrink:0}}>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 320px",gap:12,alignItems:"start"}}>
+              <div>
                 <ShipPolarDiagram pos={polarPos} weather={polarWx} shipParams={shipParams} />
               </div>
-              <div style={{flex:1,display:"flex",flexDirection:"column",gap:8,minWidth:0}}>
+              <div style={{display:"flex",flexDirection:"column",gap:8,minWidth:0,overflow:"hidden"}}>
                 {/* Navigation */}
                 <div style={{padding:10,background:"#0F172A",borderRadius:6,border:"1px solid #334155"}}>
                   <div style={{color:"#F59E0B",fontSize:9,fontWeight:700,letterSpacing:"0.1em",marginBottom:6,textTransform:"uppercase"}}>Navigation</div>
