@@ -259,8 +259,10 @@ export async function fetchRouteWeather({
       voyageWeather = ptsWithETA.map(p => {
         const mr = findNearest(mResults, p.lat, p.lon);
         const ar = findNearest(aResults, p.lat, p.lon);
+        const pr = physicsGrid?.results?.length ? findNearest(physicsGrid.results, p.lat, p.lon) : null;
         const mIdx = mr ? closestHourIdx(mr.times, p.etaMs) : 0;
         const aIdx = ar ? closestHourIdx(ar.times, p.etaMs) : 0;
+        const pIdx = pr ? closestHourIdx(pr.times, p.etaMs) : 0;
         const weather = mr ? {
           waveHeight: mr.waveHeight?.[mIdx], waveDir: mr.waveDir?.[mIdx],
           wavePeriod: mr.wavePeriod?.[mIdx],
@@ -268,6 +270,8 @@ export async function fetchRouteWeather({
           swellDir: mr.swellDir?.[mIdx],
           windKts: ar?.windKts?.[aIdx], windDir: ar?.windDir?.[aIdx],
           mslp: ar?.mslp?.[aIdx],
+          currentSpeed: pr?.currentSpeed?.[pIdx] ?? null,
+          currentDir: pr?.currentDir?.[pIdx] ?? null,
         } : null;
         const safeWeather = weather ? sanitizeWxSnapshot(weather) : null;
         const motions = safeWeather ? calcMotions({
