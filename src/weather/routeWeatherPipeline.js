@@ -223,7 +223,11 @@ export async function fetchRouteWeather({
       const phyResult = await fetchCmemsPhysicsGrid(
         cmemsCredentials.user, cmemsCredentials.pass, gridPts, routeBounds, 0.083);
       physicsGrid = { results: phyResult.results, gridRes: 0.083, bounds: routeBounds };
-      progress("currents", `${phyResult.results?.length} pts`);
+      const phyCount = Array.isArray(phyResult.results) ? phyResult.results.length : 0;
+      const sample = phyCount > 0 ? phyResult.results[0] : null;
+      console.log(`[Pipeline] Physics grid: ${phyCount} pts`,
+        sample ? `sample: lat=${sample.lat} lon=${sample.lon} times=${sample.times?.length} currentSpeed=${sample.currentSpeed?.slice(0,3)}` : "no data");
+      progress("currents", `${phyCount} pts`);
     } catch (e) {
       log.push({ stage: "currents", error: e.message });
       onProgress("Currents unavailable (continuing)...", 58, e.message.includes("timeout") ? "First CMEMS connection takes ~2min — retry later" : e.message);
@@ -267,6 +271,7 @@ export async function fetchRouteWeather({
       }
 
       onProgress("Computing seakeeping motions...", 80, "");
+      let _phyLogDone = false;
       voyageWeather = ptsWithETA.map(p => {
         const mr = findNearest(mResults, p.lat, p.lon);
         const ar = findNearest(aResults, p.lat, p.lon);
@@ -274,6 +279,11 @@ export async function fetchRouteWeather({
         const mIdx = mr ? closestHourIdx(mr.times, p.etaMs) : 0;
         const aIdx = ar ? closestHourIdx(ar.times, p.etaMs) : 0;
         const pIdx = pr ? closestHourIdx(pr.times, p.etaMs) : 0;
+        if (!_phyLogDone) {
+          console.log(`[Pipeline] Current interp: grid=${physicsGrid?.results?.length||0}pts, nearest=${pr?`(${pr.lat},${pr.lon})`:'null'}`,
+            pr ? `spd[${pIdx}]=${pr.currentSpeed?.[pIdx]} dir[${pIdx}]=${pr.currentDir?.[pIdx]}` : '');
+          _phyLogDone = true;
+        }
         const weather = mr ? {
           waveHeight: mr.waveHeight?.[mIdx], waveDir: mr.waveDir?.[mIdx],
           wavePeriod: mr.wavePeriod?.[mIdx],

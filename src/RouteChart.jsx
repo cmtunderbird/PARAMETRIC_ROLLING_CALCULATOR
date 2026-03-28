@@ -307,16 +307,27 @@ export default function RouteChart({ shipParams }) {
       });
       // Apply results to state
       if (result.voyageWPs) setVoyageWPs(result.voyageWPs);
-      if (result.voyageWeather) setVoyageWeather(result.voyageWeather);
+      if (result.voyageWeather) {
+        setVoyageWeather(result.voyageWeather);
+        // Diagnostic: check if any voyage weather point has current data
+        const withCurrent = result.voyageWeather.filter(p => p.weather?.currentSpeed != null);
+        console.log(`[Pipeline] VoyageWeather: ${result.voyageWeather.length} pts, ${withCurrent.length} with current data`,
+          withCurrent.length > 0 ? `sample: ${withCurrent[0].weather.currentSpeed} kts` : '');
+      }
       if (result.marineGrid) {
         setMarineGrid(result.marineGrid);
         setLastFetchSrc(result.marineGrid.fromCache ? "cache" : "network");
         setGridFetchedAt(result.marineGrid.fetchedAt);
       }
       if (result.atmoGrid) setAtmoGrid(result.atmoGrid);
-      if (result.physicsGrid) {
+      if (result.physicsGrid && result.physicsGrid.results?.length > 0) {
         setPhysicsGrid(result.physicsGrid);
         setCurrentsStatus("ok");
+        console.log(`[Pipeline] Physics grid set: ${result.physicsGrid.results.length} pts`);
+      } else if (result.physicsGrid) {
+        // Grid object exists but no results
+        setCurrentsStatus("CMEMS returned 0 current pts");
+        console.warn("[Pipeline] Physics grid empty — object exists but 0 results");
       } else {
         const currErr = result.log?.find(l => l.stage === "currents" && l.error);
         setCurrentsStatus(currErr ? currErr.error : (creds ? "No current data returned" : "CMEMS credentials required"));
