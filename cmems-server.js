@@ -148,7 +148,7 @@ function spawnWorker() {
 spawnWorker();
 
 // ── Send a command to the worker and await its response ───────────────────────
-const WORKER_TIMEOUT = 180_000; // 3 min — first CMEMS dataset open can take ~120s
+const WORKER_TIMEOUT = 300_000; // 5 min — first CMEMS physics dataset open can take 2-3 min
 
 function workerCall(cmd) {
   return new Promise((resolve, reject) => {
@@ -163,7 +163,7 @@ function workerCall(cmd) {
 
     const timer = setTimeout(() => {
       pendingMap.delete(requestId);
-      reject(new Error("CMEMS worker timeout (120s)"));
+      reject(new Error("CMEMS worker timeout (5 min)"));
     }, WORKER_TIMEOUT);
 
     pendingMap.set(requestId, { resolve, reject, timer });

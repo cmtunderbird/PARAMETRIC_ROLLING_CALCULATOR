@@ -28,7 +28,7 @@ function authHeader(user, pass) {
 async function browserFetch(path, user, pass) {
   const r = await fetch(`/api/cmems${path}`, {
     headers: { Authorization: authHeader(user, pass) },
-    signal: AbortSignal.timeout(120000),
+    signal: AbortSignal.timeout(300000),
   });
   if (!r.ok) {
     const b = await r.json().catch(() => ({}));

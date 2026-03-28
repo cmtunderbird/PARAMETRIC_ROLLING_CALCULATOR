@@ -242,7 +242,7 @@ ipcMain.handle('cmems:physics', async (_, { user, pass, south, north, west, east
   try {
     await waitReady();
     const q = `south=${south}&north=${north}&west=${west}&east=${east}`;
-    return await nodeGet(`http://localhost:${PORT}/api/cmems/physics?${q}`, basicAuth(user, pass), 180000);
+    return await nodeGet(`http://localhost:${PORT}/api/cmems/physics?${q}`, basicAuth(user, pass), 300000);
   } catch(e) { throw new Error(`CMEMS physics: ${e.message}`); }
 });
 

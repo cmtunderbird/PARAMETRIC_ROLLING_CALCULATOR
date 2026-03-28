@@ -205,13 +205,24 @@ export async function fetchRouteWeather({
   progress("wind_grid", atmoGrid ? `${atmoGrid.results?.length} pts (${atmoGrid.provider})` : "NO WIND DATA");
 
   // ═══ STAGE 4b: CMEMS currents (optional) ═══
+  // Use TIGHT route corridor bounds (not full map viewport) to avoid timeout
+  // on the high-resolution (0.083°) GLORYS physics grid.
   let physicsGrid = null;
   if (showCurrents && cmemsCredentials?.user && gridBounds) {
-    onProgress("Fetching ocean currents...", 55, "CMEMS GLORYS");
+    // Build tight route corridor bounds with 0.5° padding
+    const routeLats = waypoints.map(w => w.lat);
+    const routeLons = waypoints.map(w => w.lon);
+    const routeBounds = {
+      south: Math.min(...routeLats) - 0.5,
+      north: Math.max(...routeLats) + 0.5,
+      west:  Math.min(...routeLons) - 0.5,
+      east:  Math.max(...routeLons) + 0.5,
+    };
+    onProgress("Fetching ocean currents...", 55, "CMEMS GLORYS (route corridor)");
     try {
       const phyResult = await fetchCmemsPhysicsGrid(
-        cmemsCredentials.user, cmemsCredentials.pass, gridPts, gridBounds, 0.083);
-      physicsGrid = { results: phyResult.results, gridRes: 0.083, bounds: gridBounds };
+        cmemsCredentials.user, cmemsCredentials.pass, gridPts, routeBounds, 0.083);
+      physicsGrid = { results: phyResult.results, gridRes: 0.083, bounds: routeBounds };
       progress("currents", `${phyResult.results?.length} pts`);
     } catch (e) {
       log.push({ stage: "currents", error: e.message });
