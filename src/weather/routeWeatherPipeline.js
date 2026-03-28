@@ -212,12 +212,16 @@ export async function fetchRouteWeather({
     // Build tight route corridor bounds with 0.5° padding
     const routeLats = waypoints.map(w => w.lat);
     const routeLons = waypoints.map(w => w.lon);
+    // Wrap longitudes to -180..180 for NZ / antimeridian routes
+    const wrapLon = lon => lon > 180 ? lon - 360 : lon < -180 ? lon + 360 : lon;
+    const wrappedLons = routeLons.map(wrapLon);
     const routeBounds = {
       south: Math.min(...routeLats) - 0.5,
       north: Math.max(...routeLats) + 0.5,
-      west:  Math.min(...routeLons) - 0.5,
-      east:  Math.max(...routeLons) + 0.5,
+      west:  Math.min(...wrappedLons) - 0.5,
+      east:  Math.max(...wrappedLons) + 0.5,
     };
+    console.log(`[Pipeline] Physics routeBounds:`, JSON.stringify(routeBounds));
     onProgress("Fetching ocean currents...", 55, "CMEMS GLORYS (route corridor)");
     try {
       const phyResult = await fetchCmemsPhysicsGrid(

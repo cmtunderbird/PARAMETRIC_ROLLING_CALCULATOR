@@ -65,9 +65,16 @@ export function buildGridPoints(bounds, gridRes) {
   const e = Math.ceil(east   / gridRes) * gridRes;
   const pts = [];
   for (let la = s; la <= n + 0.001; la += gridRes)
-    for (let lo = w; lo <= e + 0.001; lo += gridRes)
-      pts.push({ lat: parseFloat(la.toFixed(2)), lon: parseFloat(lo.toFixed(2)) });
-  return { points: pts, bounds: { south:s, north:n, west:w, east:e } };
+    for (let lo = w; lo <= e + 0.001; lo += gridRes) {
+      // Wrap longitude to -180..180 (Leaflet can report east > 180 near antimeridian)
+      let wlon = parseFloat(lo.toFixed(2));
+      if (wlon > 180)  wlon -= 360;
+      if (wlon < -180) wlon += 360;
+      pts.push({ lat: parseFloat(la.toFixed(2)), lon: wlon });
+    }
+  // Also wrap the returned bounds for API calls that use them directly
+  const wrapLon = l => l > 180 ? l - 360 : l < -180 ? l + 360 : l;
+  return { points: pts, bounds: { south:s, north:n, west:wrapLon(w), east:wrapLon(e) } };
 }
 
 // ── Progress callback helper ──────────────────────────────────────────────────
