@@ -4,7 +4,7 @@
 // In browser dev (http:// origin): direct fetch via Vite proxy to /api/cmems/*
 
 export const CMEMS_WAVE_DATASET    = "cmems_mod_glo_wav_anfc_0.083deg_PT3H-i";
-export const CMEMS_PHYSICS_DATASET = "cmems_mod_glo_phy_anfc_0.083deg_PT1H-m";
+export const CMEMS_PHYSICS_DATASET = "cmems_mod_glo_phy-cur_anfc_0.083deg_P1D-m"; // currents-only subset (daily, much lighter)
 
 // ── Runtime detection ─────────────────────────────────────────────────────────
 // file:// protocol means Electron production — never browser dev.

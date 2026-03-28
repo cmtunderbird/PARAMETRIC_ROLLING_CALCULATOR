@@ -49,7 +49,19 @@ def handle_test(cmd):
     elapsed = round(time.time() - t0, 1)
     if not valid:
         return {"ok": False, "message": "Invalid credentials — check username and password."}
-    return {"ok": True, "message": f"\u2713 CMEMS credentials valid ({elapsed}s)"}
+    # Pre-warm dataset handles in background thread (non-blocking)
+    import threading
+    def _warmup():
+        try:
+            sys.stderr.write("[warmup] Opening wave dataset...\n")
+            open_ds("cmems_mod_glo_wav_anfc_0.083deg_PT3H-i", user, password)
+            sys.stderr.write("[warmup] Wave dataset ready. Opening physics dataset...\n")
+            open_ds("cmems_mod_glo_phy_anfc_0.083deg_PT1H-m", user, password)
+            sys.stderr.write("[warmup] Physics dataset ready.\n")
+        except Exception as exc:
+            sys.stderr.write(f"[warmup] Error: {exc}\n")
+    threading.Thread(target=_warmup, daemon=True).start()
+    return {"ok": True, "message": f"\u2713 CMEMS credentials valid ({elapsed}s) — datasets warming up in background"}
 
 def handle_wave(cmd):
     user, password = cmd["user"], cmd["password"]
@@ -85,9 +97,11 @@ def handle_physics(cmd):
     user, password = cmd["user"], cmd["password"]
     s, n, w, e = cmd["south"], cmd["north"], cmd["west"], cmd["east"]
     start, end = cmd["start"], cmd["end"]
-    sys.stderr.write(f"[physics] bounds: s={s} n={n} w={w} e={e} time={start}..{end}\n")
-    ds = open_ds("cmems_mod_glo_phy_anfc_0.083deg_PT1H-m", user, password)
-    sub = ds[["uo","vo","thetao"]].sel(
+    # Use currents-only daily dataset (much lighter than full physics hourly)
+    dataset_id = "cmems_mod_glo_phy-cur_anfc_0.083deg_P1D-m"
+    sys.stderr.write(f"[physics] dataset={dataset_id} bounds: s={s} n={n} w={w} e={e} time={start}..{end}\n")
+    ds = open_ds(dataset_id, user, password)
+    sub = ds[["uo","vo"]].sel(
         latitude=slice(s, n), longitude=slice(w, e),
         time=slice(start, end)
     )
@@ -105,7 +119,7 @@ def handle_physics(cmd):
         for loi, lon in enumerate(lons):
             pt = {"lat": round(lat,3), "lon": round(lon,3),
                   "times": times, "source": "cmems_phy"}
-            for var, key in [("uo","currentU"),("vo","currentV"),("thetao","sst")]:
+            for var, key in [("uo","currentU"),("vo","currentV")]:
                 if var in sub:
                     pt[key] = arr_clean(
                         sub[var].isel(latitude=li, longitude=loi).values.tolist(), 4
@@ -387,8 +401,26 @@ def handle_noaa_wwiii(cmd):
             continue
     return {"ok": False, "error": f"All WW3 runs failed: {last_err}"}
 
+def handle_warmup(cmd):
+    """Open both CMEMS datasets to cache handles. Slow first time (~5min)."""
+    user, password = cmd["user"], cmd["password"]
+    import time
+    results = {}
+    for name, dsid in [("wave", "cmems_mod_glo_wav_anfc_0.083deg_PT3H-i"),
+                        ("physics", "cmems_mod_glo_phy_anfc_0.083deg_PT1H-m")]:
+        t0 = time.time()
+        try:
+            open_ds(dsid, user, password)
+            results[name] = {"ok": True, "elapsed": round(time.time() - t0, 1)}
+            sys.stderr.write(f"[warmup] {name} dataset ready in {results[name]['elapsed']}s\n")
+        except Exception as e:
+            results[name] = {"ok": False, "error": str(e), "elapsed": round(time.time() - t0, 1)}
+            sys.stderr.write(f"[warmup] {name} dataset FAILED: {e}\n")
+    return {"ok": True, "datasets": results}
+
 # ── Main loop — read one JSON command per line, write one JSON result ──────────
 HANDLERS = {"test": handle_test, "wave": handle_wave, "physics": handle_physics,
+            "warmup": handle_warmup,
             "noaa_gfs": handle_noaa_gfs, "noaa_wwiii": handle_noaa_wwiii}
 
 print(json.dumps({"ready": True}), flush=True)
