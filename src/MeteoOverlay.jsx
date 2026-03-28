@@ -181,8 +181,11 @@ function fillNulls(grid, rows, cols, passes=4) {
 function renderSynopticImage(marineGrid, mode, shipParams, hourIdx) {
   const { bounds, gridRes } = marineGrid;
   const { south, north, west, east } = bounds;
-  const cols = Math.round((east-west)/gridRes)+1;
+  // Handle antimeridian: east may exceed 180° (Leaflet convention) or wrap to negative
+  const lonSpan = east >= west ? (east - west) : (east + 360 - west);
+  const cols = Math.round(lonSpan/gridRes)+1;
   const rows = Math.round((north-south)/gridRes)+1;
+  if (cols < 1 || rows < 1 || cols > 2000 || rows > 2000) return null; // safety guard
   const PX = 40;                        // pixels per grid cell
   const cw = cols*PX, ch = rows*PX;
 
@@ -191,7 +194,10 @@ function renderSynopticImage(marineGrid, mode, shipParams, hourIdx) {
   for (const pt of marineGrid.results) {
     if (!pt.times) continue;
     const idx = Math.min(hourIdx, pt.times.length-1);
-    const c = Math.round((pt.lon-west)/gridRes);
+    // Handle wrapped longitudes: if point is west of grid west, add 360
+    let ptLon = pt.lon;
+    if (ptLon < west) ptLon += 360;
+    const c = Math.round((ptLon-west)/gridRes);
     const r = Math.round((north-pt.lat)/gridRes);
     if (r<0||r>=rows||c<0||c>=cols) continue;
     mGrid[r][c] = mode==="waveHeight" ? pt.waveHeight?.[idx]
@@ -308,15 +314,18 @@ function renderAtmoLayer(canvas, cols, rows, cw, ch, atmoResults, bounds, gridRe
   // Compute actual extent from the data + the canvas bounds
   const { south, north, west, east } = bounds;
   const latSpan = north - south || 1;
-  const lonSpan = east - west || 1;
+  // Handle antimeridian: east may exceed 180° (Leaflet convention)
+  const lonSpan = east >= west ? (east - west) : (east + 360 - west);
+  const wrapLon = (lon) => lon < west ? lon + 360 : lon;
 
   // Direct lat/lon → pixel mapping (works regardless of grid resolution mismatch)
-  const toX = (lon) => ((lon - west) / lonSpan) * cw;
+  const toX = (lon) => ((wrapLon(lon) - west) / (lonSpan || 1)) * cw;
   const toY = (lat) => ((north - lat) / latSpan) * ch;
 
   // Build sparse pressure grid for isobars (resample to marine grid)
-  const mCols = Math.round(lonSpan / (gridRes || 0.25)) + 1;
+  const mCols = Math.round((lonSpan || 1) / (gridRes || 0.25)) + 1;
   const mRows = Math.round(latSpan / (gridRes || 0.25)) + 1;
+  if (mCols < 1 || mRows < 1 || mCols > 2000 || mRows > 2000) return;
   const pGrid = Array.from({length:mRows},()=>Array(mCols).fill(null));
 
   // Also collect point data for wind barbs
@@ -325,7 +334,7 @@ function renderAtmoLayer(canvas, cols, rows, cw, ch, atmoResults, bounds, gridRe
   for (const pt of atmoResults) {
     if (!pt.times) continue;
     const idx = Math.min(hourIdx, pt.times.length - 1);
-    const c = Math.round((pt.lon - west) / (gridRes || 0.25));
+    const c = Math.round((wrapLon(pt.lon) - west) / (gridRes || 0.25));
     const r = Math.round((north - pt.lat) / (gridRes || 0.25));
     if (r >= 0 && r < mRows && c >= 0 && c < mCols) {
       pGrid[r][c] = pt.mslp?.[idx] ?? null;
@@ -426,8 +435,9 @@ function renderCurrentsLayer(canvas, cols, rows, cw, ch, physResults, bounds, gr
   const { south, north, west, east } = bounds;
   const ctx = canvas.getContext("2d");
   const latSpan = north - south || 1;
-  const lonSpan = east - west || 1;
-  const toX = (lon) => ((lon - west) / lonSpan) * cw;
+  const lonSpan = east >= west ? (east - west) : (east + 360 - west);
+  const wrapLon = (lon) => lon < west ? lon + 360 : lon;
+  const toX = (lon) => ((wrapLon(lon) - west) / (lonSpan || 1)) * cw;
   const toY = (lat) => ((north - lat) / latSpan) * ch;
 
   const minSpacing = 30;
