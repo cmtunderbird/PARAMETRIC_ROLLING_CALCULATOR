@@ -22,7 +22,8 @@ def open_ds(dataset_id, user, password):
         old_stdout = sys.stdout
         sys.stdout = sys.stderr
         try:
-            _ds_cache[key] = copernicusmarine.open_dataset(dataset_id=dataset_id)
+            _ds_cache[key] = copernicusmarine.open_dataset(
+                dataset_id=dataset_id, username=user, password=password)
         finally:
             sys.stdout = old_stdout
     return _ds_cache[key]
@@ -45,14 +46,18 @@ def handle_test(cmd):
     user, password = cmd["user"], cmd["password"]
     import copernicusmarine, time
     t0 = time.time()
-    # Use login(check_credentials_valid=True) — only hits the auth server,
-    # no dataset open and no data download. ~3s vs ~60s for open_dataset.
-    valid = copernicusmarine.login(
-        username=user,
-        password=password,
-        check_credentials_valid=True,
-        force_overwrite=False,
-    )
+    # Redirect stdout during login — copernicusmarine prints status messages
+    old_stdout = sys.stdout
+    sys.stdout = sys.stderr
+    try:
+        valid = copernicusmarine.login(
+            username=user,
+            password=password,
+            check_credentials_valid=True,
+            force_overwrite=False,
+        )
+    finally:
+        sys.stdout = old_stdout
     elapsed = round(time.time() - t0, 1)
     if not valid:
         return {"ok": False, "message": "Invalid credentials — check username and password."}
@@ -62,9 +67,8 @@ def handle_test(cmd):
         try:
             sys.stderr.write("[warmup] Opening wave dataset...\n")
             open_ds("cmems_mod_glo_wav_anfc_0.083deg_PT3H-i", user, password)
-            sys.stderr.write("[warmup] Wave dataset ready. Opening physics dataset...\n")
-            open_ds("cmems_mod_glo_phy_anfc_0.083deg_PT1H-m", user, password)
-            sys.stderr.write("[warmup] Physics dataset ready.\n")
+            sys.stderr.write("[warmup] Wave dataset ready.\n")
+            # Physics uses subset() download, no warmup needed
         except Exception as exc:
             sys.stderr.write(f"[warmup] Error: {exc}\n")
     threading.Thread(target=_warmup, daemon=True).start()
@@ -130,6 +134,7 @@ def handle_physics(cmd):
                 minimum_depth=0, maximum_depth=1,
                 output_filename="currents.nc",
                 output_directory=tmpdir,
+                username=user, password=password,
             )
         finally:
             sys.stdout = old_stdout  # always restore stdout
