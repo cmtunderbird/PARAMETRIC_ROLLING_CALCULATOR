@@ -130,8 +130,6 @@ def handle_physics(cmd):
                 minimum_depth=0, maximum_depth=1,
                 output_filename="currents.nc",
                 output_directory=tmpdir,
-                overwrite_output_data=True,
-                force_download=True,
             )
         finally:
             sys.stdout = old_stdout  # always restore stdout
