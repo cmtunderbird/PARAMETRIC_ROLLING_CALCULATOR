@@ -197,6 +197,18 @@ app.get("/api/cmems/test", async (req, res) => {
   } catch(e) { res.json({ ok: false, message: e.message }); }
 });
 
+// ── /api/cmems/warmup — Pre-open dataset handles (slow first time) ────────────
+app.get("/api/cmems/warmup", async (req, res) => {
+  const creds = getCredentials(req);
+  if (!creds) return res.status(401).json({ error: "Missing Authorization header" });
+  // Very long timeout — first GLORYS dataset open can take 5-10 min
+  res.setTimeout(600_000);
+  try {
+    const result = await workerCall({ action: "warmup", user: creds.user, password: creds.pass });
+    res.json(result);
+  } catch(e) { res.status(500).json({ error: e.message }); }
+});
+
 // ── /api/cmems/wave ───────────────────────────────────────────────────────────
 app.get("/api/cmems/wave", async (req, res) => {
   const creds = getCredentials(req);
@@ -222,10 +234,9 @@ app.get("/api/cmems/physics", async (req, res) => {
   const creds = getCredentials(req);
   if (!creds) return res.status(401).json({ error: "Missing Authorization header" });
   const { south, north, west, east } = req.query;
-  // GLORYS analysis runs ~1-2 days behind real-time. Start from 3 days ago
-  // to ensure we capture the latest available data + any forecast extension.
+  // GLORYS analysis runs ~1 day behind real-time. Request from yesterday to +2d.
   const now = new Date();
-  const start = new Date(now.getTime() - 3 * 86_400_000);
+  const start = new Date(now.getTime() - 1 * 86_400_000);
   const end = new Date(now.getTime() + 2 * 86_400_000);
   try {
     const result = await workerCall({

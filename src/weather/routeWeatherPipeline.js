@@ -209,17 +209,17 @@ export async function fetchRouteWeather({
   // on the high-resolution (0.083°) GLORYS physics grid.
   let physicsGrid = null;
   if (showCurrents && cmemsCredentials?.user && gridBounds) {
-    // Build tight route corridor bounds with 0.5° padding
+    // Build tight route corridor bounds with 0.2° padding (minimal for currents)
     const routeLats = waypoints.map(w => w.lat);
     const routeLons = waypoints.map(w => w.lon);
     // Wrap longitudes to -180..180 for NZ / antimeridian routes
     const wrapLon = lon => lon > 180 ? lon - 360 : lon < -180 ? lon + 360 : lon;
     const wrappedLons = routeLons.map(wrapLon);
     const routeBounds = {
-      south: Math.min(...routeLats) - 0.5,
-      north: Math.max(...routeLats) + 0.5,
-      west:  Math.min(...wrappedLons) - 0.5,
-      east:  Math.max(...wrappedLons) + 0.5,
+      south: Math.min(...routeLats) - 0.2,
+      north: Math.max(...routeLats) + 0.2,
+      west:  Math.min(...wrappedLons) - 0.2,
+      east:  Math.max(...wrappedLons) + 0.2,
     };
     console.log(`[Pipeline] Physics routeBounds:`, JSON.stringify(routeBounds));
     onProgress("Fetching ocean currents...", 55, "CMEMS GLORYS (route corridor)");

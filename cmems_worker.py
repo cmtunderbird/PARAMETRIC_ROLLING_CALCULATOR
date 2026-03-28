@@ -17,7 +17,14 @@ def open_ds(dataset_id, user, password):
         os.environ["COPERNICUSMARINE_SERVICE_USERNAME"] = user
         os.environ["COPERNICUSMARINE_SERVICE_PASSWORD"] = password
         import copernicusmarine
-        _ds_cache[key] = copernicusmarine.open_dataset(dataset_id=dataset_id)
+        # Redirect stdout → stderr: copernicusmarine prints progress to stdout
+        # which corrupts our JSON stdin/stdout protocol
+        old_stdout = sys.stdout
+        sys.stdout = sys.stderr
+        try:
+            _ds_cache[key] = copernicusmarine.open_dataset(dataset_id=dataset_id)
+        finally:
+            sys.stdout = old_stdout
     return _ds_cache[key]
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
@@ -106,21 +113,28 @@ def handle_physics(cmd):
     os.environ["COPERNICUSMARINE_SERVICE_USERNAME"] = user
     os.environ["COPERNICUSMARINE_SERVICE_PASSWORD"] = password
     # Download to temp file — avoids OPeNDAP streaming timeout
+    # CRITICAL: redirect stdout to stderr during subset() call —
+    # copernicusmarine prints progress to stdout which corrupts our JSON protocol
     tmpdir = tempfile.mkdtemp(prefix="prc_cmems_cur_")
     outfile = os.path.join(tmpdir, "currents.nc")
     try:
-        copernicusmarine.subset(
-            dataset_id=dataset_id,
-            variables=["uo", "vo"],
-            minimum_latitude=s, maximum_latitude=n,
-            minimum_longitude=w, maximum_longitude=e,
-            start_datetime=start, end_datetime=end,
-            minimum_depth=0, maximum_depth=1,
-            output_filename="currents.nc",
-            output_directory=tmpdir,
-            overwrite_output_data=True,
-            force_download=True,
-        )
+        old_stdout = sys.stdout
+        sys.stdout = sys.stderr  # redirect all subset() output to stderr
+        try:
+            copernicusmarine.subset(
+                dataset_id=dataset_id,
+                variables=["uo", "vo"],
+                minimum_latitude=s, maximum_latitude=n,
+                minimum_longitude=w, maximum_longitude=e,
+                start_datetime=start, end_datetime=end,
+                minimum_depth=0, maximum_depth=1,
+                output_filename="currents.nc",
+                output_directory=tmpdir,
+                overwrite_output_data=True,
+                force_download=True,
+            )
+        finally:
+            sys.stdout = old_stdout  # always restore stdout
         sys.stderr.write(f"[physics] file downloaded: {outfile} ({os.path.getsize(outfile)} bytes)\n")
         ds = xr.open_dataset(outfile)
     except Exception as exc:
