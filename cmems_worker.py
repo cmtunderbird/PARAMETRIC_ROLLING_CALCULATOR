@@ -94,39 +94,63 @@ def handle_wave(cmd):
     return out
 
 def handle_physics(cmd):
+    """Fetch ocean currents using copernicusmarine.subset() — downloads NetCDF file.
+    Much more reliable than open_dataset() OPeNDAP streaming for first-time use."""
+    import copernicusmarine, tempfile, xarray as xr
     user, password = cmd["user"], cmd["password"]
     s, n, w, e = cmd["south"], cmd["north"], cmd["west"], cmd["east"]
     start, end = cmd["start"], cmd["end"]
-    # Use currents-only daily dataset (much lighter than full physics hourly)
     dataset_id = "cmems_mod_glo_phy-cur_anfc_0.083deg_P1D-m"
-    sys.stderr.write(f"[physics] dataset={dataset_id} bounds: s={s} n={n} w={w} e={e} time={start}..{end}\n")
-    ds = open_ds(dataset_id, user, password)
-    sub = ds[["uo","vo"]].sel(
-        latitude=slice(s, n), longitude=slice(w, e),
-        time=slice(start, end)
-    )
-    if "depth" in sub.dims:
-        sub = sub.isel(depth=0)
-    lats  = sub.latitude.values.tolist()
-    lons  = sub.longitude.values.tolist()
-    times = [int(t.astype("int64") // 1_000_000) for t in sub.time.values]
-    sys.stderr.write(f"[physics] slice: {len(lats)} lats x {len(lons)} lons x {len(times)} times\n")
+    sys.stderr.write(f"[physics] subset download: {dataset_id}\n")
+    sys.stderr.write(f"[physics] bounds: s={s} n={n} w={w} e={e} time={start}..{end}\n")
+    os.environ["COPERNICUSMARINE_SERVICE_USERNAME"] = user
+    os.environ["COPERNICUSMARINE_SERVICE_PASSWORD"] = password
+    # Download to temp file — avoids OPeNDAP streaming timeout
+    tmpdir = tempfile.mkdtemp(prefix="prc_cmems_cur_")
+    outfile = os.path.join(tmpdir, "currents.nc")
+    try:
+        copernicusmarine.subset(
+            dataset_id=dataset_id,
+            variables=["uo", "vo"],
+            minimum_latitude=s, maximum_latitude=n,
+            minimum_longitude=w, maximum_longitude=e,
+            start_datetime=start, end_datetime=end,
+            minimum_depth=0, maximum_depth=1,
+            output_filename="currents.nc",
+            output_directory=tmpdir,
+            overwrite_output_data=True,
+            force_download=True,
+        )
+        sys.stderr.write(f"[physics] file downloaded: {outfile} ({os.path.getsize(outfile)} bytes)\n")
+        ds = xr.open_dataset(outfile)
+    except Exception as exc:
+        sys.stderr.write(f"[physics] subset failed: {exc}\n")
+        import shutil
+        shutil.rmtree(tmpdir, ignore_errors=True)
+        raise
+    # Extract data from downloaded NetCDF
+    if "depth" in ds.dims:
+        ds = ds.isel(depth=0)
+    lats = ds.latitude.values.tolist()
+    lons = ds.longitude.values.tolist()
+    times = [int(t.astype("int64") // 1_000_000) for t in ds.time.values]
+    sys.stderr.write(f"[physics] data: {len(lats)} lats x {len(lons)} lons x {len(times)} times\n")
     out = []
     diag = {"lats": len(lats), "lons": len(lons), "times": len(times),
             "bounds": {"s": s, "n": n, "w": w, "e": e},
             "timeRange": {"start": start, "end": end}}
     for li, lat in enumerate(lats):
         for loi, lon in enumerate(lons):
-            pt = {"lat": round(lat,3), "lon": round(lon,3),
+            pt = {"lat": round(float(lat), 3), "lon": round(float(lon), 3),
                   "times": times, "source": "cmems_phy"}
-            for var, key in [("uo","currentU"),("vo","currentV")]:
-                if var in sub:
+            for var, key in [("uo", "currentU"), ("vo", "currentV")]:
+                if var in ds:
                     pt[key] = arr_clean(
-                        sub[var].isel(latitude=li, longitude=loi).values.tolist(), 4
+                        ds[var].isel(latitude=li, longitude=loi).values.tolist(), 4
                     )
             if "currentU" in pt and "currentV" in pt:
                 pt["currentSpeed"] = [
-                    round(math.sqrt(u**2+v**2), 4)
+                    round(math.sqrt(u**2 + v**2), 4)
                     if u is not None and v is not None else None
                     for u, v in zip(pt["currentU"], pt["currentV"])
                 ]
@@ -136,6 +160,9 @@ def handle_physics(cmd):
                     for u, v in zip(pt["currentU"], pt["currentV"])
                 ]
             out.append(pt)
+    ds.close()
+    import shutil
+    shutil.rmtree(tmpdir, ignore_errors=True)
     sys.stderr.write(f"[physics] returning {len(out)} grid points\n")
     return {"data": out, "diag": diag}
 
