@@ -281,6 +281,14 @@ function createWindow() {
     mainWindow.loadFile(path.join(ROOT, 'dist', 'index.html'));
   }
 
+  // F12 opens DevTools in any mode (diagnostics)
+  mainWindow.webContents.on('before-input-event', (event, input) => {
+    if (input.key === 'F12') {
+      mainWindow.webContents.toggleDevTools();
+      event.preventDefault();
+    }
+  });
+
   // Open external links in default browser, not inside Electron
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     shell.openExternal(url);
