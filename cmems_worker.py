@@ -85,6 +85,7 @@ def handle_physics(cmd):
     user, password = cmd["user"], cmd["password"]
     s, n, w, e = cmd["south"], cmd["north"], cmd["west"], cmd["east"]
     start, end = cmd["start"], cmd["end"]
+    sys.stderr.write(f"[physics] bounds: s={s} n={n} w={w} e={e} time={start}..{end}\n")
     ds = open_ds("cmems_mod_glo_phy_anfc_0.083deg_PT1H-m", user, password)
     sub = ds[["uo","vo","thetao"]].sel(
         latitude=slice(s, n), longitude=slice(w, e),
@@ -95,7 +96,11 @@ def handle_physics(cmd):
     lats  = sub.latitude.values.tolist()
     lons  = sub.longitude.values.tolist()
     times = [int(t.astype("int64") // 1_000_000) for t in sub.time.values]
+    sys.stderr.write(f"[physics] slice: {len(lats)} lats x {len(lons)} lons x {len(times)} times\n")
     out = []
+    diag = {"lats": len(lats), "lons": len(lons), "times": len(times),
+            "bounds": {"s": s, "n": n, "w": w, "e": e},
+            "timeRange": {"start": start, "end": end}}
     for li, lat in enumerate(lats):
         for loi, lon in enumerate(lons):
             pt = {"lat": round(lat,3), "lon": round(lon,3),
@@ -117,7 +122,8 @@ def handle_physics(cmd):
                     for u, v in zip(pt["currentU"], pt["currentV"])
                 ]
             out.append(pt)
-    return out
+    sys.stderr.write(f"[physics] returning {len(out)} grid points\n")
+    return {"data": out, "diag": diag}
 
 # ── NOAA GFS handler — GRIB filter replacement (OPeNDAP retired Feb 2026) ────
 # Fetches 10m wind (U/V → speed/dir) + MSLP from GFS 0.25° via NOMADS GRIB filter.

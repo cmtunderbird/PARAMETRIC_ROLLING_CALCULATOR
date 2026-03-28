@@ -230,7 +230,8 @@ export async function fetchRouteWeather({
       const phyCount = Array.isArray(phyResult.results) ? phyResult.results.length : 0;
       const sample = phyCount > 0 ? phyResult.results[0] : null;
       console.log(`[Pipeline] Physics grid: ${phyCount} pts`,
-        sample ? `sample: lat=${sample.lat} lon=${sample.lon} times=${sample.times?.length} currentSpeed=${sample.currentSpeed?.slice(0,3)}` : "no data");
+        sample ? `sample: lat=${sample.lat} lon=${sample.lon} times=${sample.times?.length} currentSpeed=${sample.currentSpeed?.slice(0,3)}` : "no data",
+        phyResult.diag ? `| diag: ${phyResult.diag.lats}lats × ${phyResult.diag.lons}lons × ${phyResult.diag.times}times` : "");
       progress("currents", `${phyCount} pts`);
     } catch (e) {
       log.push({ stage: "currents", error: e.message });

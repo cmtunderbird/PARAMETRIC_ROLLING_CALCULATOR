@@ -72,9 +72,9 @@ export function buildGridPoints(bounds, gridRes) {
       if (wlon < -180) wlon += 360;
       pts.push({ lat: parseFloat(la.toFixed(2)), lon: wlon });
     }
-  // Also wrap the returned bounds for API calls that use them directly
-  const wrapLon = l => l > 180 ? l - 360 : l < -180 ? l + 360 : l;
-  return { points: pts, bounds: { south:s, north:n, west:wrapLon(w), east:wrapLon(e) } };
+  // Bounds stay in Leaflet convention (may exceed 180° near antimeridian)
+  // Individual points are wrapped for API compatibility
+  return { points: pts, bounds: { south:s, north:n, west:w, east:e } };
 }
 
 // ── Progress callback helper ──────────────────────────────────────────────────
@@ -188,9 +188,13 @@ export async function fetchCmemsPhysicsGrid(user, pass, points, bounds=null, gri
       return { results:cached.results, fromCache:true, fetchedAt:cached.fetchedAt, cacheAgeMin:ageMin, provider:"cmems_phy" };
     }
   }
-  const results = await cmemsPhysicsGrid(user, pass, bounds||{south:-80,north:90,west:-180,east:180}, 2);
+  const raw = await cmemsPhysicsGrid(user, pass, bounds||{south:-80,north:90,west:-180,east:180}, 2);
+  // Express now returns { data: [...], diag: {...} } or legacy plain array
+  const results = Array.isArray(raw) ? raw : (Array.isArray(raw?.data) ? raw.data : raw);
+  const diag = raw?.diag || null;
+  if (diag) console.log("[CMEMS Physics] diag:", JSON.stringify(diag));
   if (bounds) cacheSet("physics_cmems", bounds, gridRes, results, "cmems_phy");
-  return { results, fromCache:false, fetchedAt:Date.now(), cacheAgeMin:0, provider:"cmems_phy" };
+  return { results, diag, fromCache:false, fetchedAt:Date.now(), cacheAgeMin:0, provider:"cmems_phy" };
 }
 
 // ── Unified marine (CMEMS → Open-Meteo fallback) ──────────────────────────────

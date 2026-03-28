@@ -74,10 +74,10 @@ const PORT = 5174;
 app.use(cors({ origin: "*" }));
 app.use(express.json());
 
-// ── Per-request timeout: 180s (covers worst-case first-dataset-open ~120s) ───
+// ── Per-request timeout: 300s (covers first-dataset-open + large physics grid) ─
 app.use((req, res, next) => {
-  res.setTimeout(180_000, () => {
-    if (!res.headersSent) res.status(503).json({ error: "Request timeout (180s)" });
+  res.setTimeout(300_000, () => {
+    if (!res.headersSent) res.status(503).json({ error: "Request timeout (5 min)" });
   });
   next();
 });
@@ -222,18 +222,22 @@ app.get("/api/cmems/physics", async (req, res) => {
   const creds = getCredentials(req);
   if (!creds) return res.status(401).json({ error: "Missing Authorization header" });
   const { south, north, west, east } = req.query;
+  // GLORYS analysis runs ~1-2 days behind real-time. Start from 3 days ago
+  // to ensure we capture the latest available data + any forecast extension.
   const now = new Date();
+  const start = new Date(now.getTime() - 3 * 86_400_000);
   const end = new Date(now.getTime() + 2 * 86_400_000);
   try {
     const result = await workerCall({
       action: "physics", user: creds.user, password: creds.pass,
       south: parseFloat(south), north: parseFloat(north),
       west:  parseFloat(west),  east:  parseFloat(east),
-      start: fmtDT(now), end: fmtDT(end),
+      start: fmtDT(start), end: fmtDT(end),
     });
     if (result.error) return res.status(500).json(result);
-    // Unwrap envelope: Python returns { requestId, data: [...] } for list results
-    res.json(result.data ?? result);
+    // Physics returns { data: [...], diag: {...} }. Pass diag through for debugging.
+    const phyData = Array.isArray(result.data) ? result.data : (result.data ?? result);
+    res.json({ data: phyData, diag: result.diag || null });
   } catch(e) { res.status(500).json({ error: e.message }); }
 });
 
